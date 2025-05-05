@@ -55,7 +55,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
     <form 
       onSubmit={handleSubmit} 
       className={cn(
-        "flex items-end border border-gray-700 rounded-xl bg-gray-800 p-2", 
+        "flex items-end border border-gray-200 rounded-xl bg-white p-2 shadow-sm", 
         className
       )}
     >
@@ -66,7 +66,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
         disabled={disabled}
-        className="w-full bg-transparent border-none focus:ring-0 focus:outline-none resize-none max-h-32 py-2 px-3 text-ava-light"
+        className="w-full bg-transparent border-none focus:ring-0 focus:outline-none resize-none max-h-32 py-2 px-3 text-gray-700"
         style={{ minHeight: '40px' }}
         rows={1}
       />
@@ -74,7 +74,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
         type="submit" 
         size="sm"
         disabled={!message.trim() || disabled}
-        className="bg-ava-neon-green text-black hover:bg-ava-neon-green-light ml-2"
+        className="bg-ava-neon-green text-gray-800 hover:bg-ava-neon-green-light ml-2"
       >
         <SendHorizonal className="h-5 w-5" />
       </Button>

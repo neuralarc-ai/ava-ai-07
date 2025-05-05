@@ -67,13 +67,13 @@ export default {
 					ring: 'hsl(var(--sidebar-ring))'
 				},
 				ava: {
-					dark: '#121214',
-					light: '#f0f0f0',
-					'neon-green': '#4ade80',
-					'neon-green-light': '#86efac',
-					'neon-green-dark': '#22c55e',
-					muted: '#374151',
-					'card-bg': '#1a1a1c'
+					light: '#ffffff',
+					dark: '#333333',
+					'neon-green': '#a3e635',
+					'neon-green-light': '#bef264',
+					'neon-green-dark': '#65a30d',
+					muted: '#f3f4f6',
+					'card-bg': '#ffffff'
 				}
 			},
 			borderRadius: {

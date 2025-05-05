@@ -8,14 +8,15 @@ import FileUpload from '@/components/Upload/FileUpload';
 import ReportHistory from '@/components/Card/ReportHistory';
 import ApiKeyModal from '@/components/Settings/ApiKeyModal';
 import { useNavigate } from 'react-router-dom';
-import { Settings, FileText } from 'lucide-react';
+import { Settings, FileText, Calendar } from 'lucide-react';
 import { Message } from '@/components/Chat/ChatWindow';
 import { v4 as uuidv4 } from 'uuid';
 import { Report } from '@/components/Card/ReportHistory';
+import { toast } from '@/hooks/use-toast';
 
 const Index = () => {
   const navigate = useNavigate();
-  const [userName, setUserName] = useState<string | null>(null);
+  const [userName, setUserName] = useState<string | null>(localStorage.getItem('user_name'));
   const [messages, setMessages] = useState<Message[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
   const [apiKey, setApiKey] = useState<string | null>(localStorage.getItem('openai_api_key'));
@@ -30,7 +31,9 @@ const Index = () => {
       const initialMessage: Message = {
         id: uuidv4(),
         sender: 'ava',
-        message: "Hey there! I'm Ava AI, your blood report analyzer. What's your name?",
+        message: userName ? 
+          `Welcome back, ${userName}! How can I help you with your blood report analysis today?` : 
+          "Hey there! I'm Ava AI, your blood report analyzer. What's your name?",
         timestamp: new Date(),
         isNew: true
       };
@@ -48,6 +51,11 @@ const Index = () => {
         console.error('Failed to parse saved reports', e);
       }
     }
+    
+    // Check if we have a username already
+    if (userName) {
+      setUploadVisible(true);
+    }
   }, []);
 
   const handleSendMessage = (message: string) => {
@@ -64,6 +72,7 @@ const Index = () => {
     // If user is providing their name
     if (!userName) {
       setUserName(message);
+      localStorage.setItem('user_name', message);
       setIsTyping(true);
       
       // Simulate Ava's response after receiving name
@@ -79,6 +88,31 @@ const Index = () => {
         setIsTyping(false);
         setUploadVisible(true);
       }, 1000);
+    } else {
+      // Simulate response for other messages
+      setIsTyping(true);
+      setTimeout(() => {
+        let responseMessage;
+        
+        if (message.toLowerCase().includes('help') || message.toLowerCase().includes('how')) {
+          responseMessage = "To analyze your blood report, I need you to upload a PDF or image of your report. Once uploaded, I'll analyze the values and provide personalized insights.";
+        } else if (message.toLowerCase().includes('thank')) {
+          responseMessage = "You're welcome! If you have any other questions about your blood reports or need clarification on any results, don't hesitate to ask.";
+        } else {
+          responseMessage = "Thanks for your message. Would you like to upload a new blood report for analysis?";
+        }
+        
+        const response: Message = {
+          id: uuidv4(),
+          sender: 'ava',
+          message: responseMessage,
+          timestamp: new Date(),
+          isNew: true
+        };
+        
+        setMessages(prev => [...prev, response]);
+        setIsTyping(false);
+      }, 1500);
     }
   };
 
@@ -135,10 +169,22 @@ const Index = () => {
     
     setMessages(prev => [...prev, confirmationMessage]);
     
-    // After a short delay, navigate to the results page
+    // After a short delay, add a message from Sam
     setTimeout(() => {
-      navigate(`/results?report=${reportId}`);
-    }, 1500);
+      const samMessage: Message = {
+        id: uuidv4(),
+        sender: 'sam',
+        message: `I'll assist in interpreting the clinical values in your report. We'll have the results ready shortly.`,
+        timestamp: new Date(),
+        isNew: true
+      };
+      setMessages(prev => [...prev, samMessage]);
+      
+      // Then navigate to the results page
+      setTimeout(() => {
+        navigate(`/results?report=${reportId}`);
+      }, 2000);
+    }, 2000);
   };
 
   const handleSaveApiKey = (key: string, model: string) => {
@@ -161,18 +207,31 @@ const Index = () => {
     // Navigate to results page for the selected report
     navigate(`/results?report=${report.id}`);
   };
+  
+  const handleDeleteReport = (reportId: string) => {
+    // Remove the report
+    const updatedReports = reports.filter(r => r.id !== reportId);
+    setReports(updatedReports);
+    localStorage.setItem('blood_reports', JSON.stringify(updatedReports));
+    
+    // Show toast notification
+    toast({
+      title: "Report deleted",
+      description: "The report has been removed from your history",
+    });
+  };
 
   return (
-    <div className="flex flex-col min-h-screen bg-ava-dark text-ava-light">
+    <div className="flex flex-col min-h-screen bg-gray-50 text-gray-800">
       {/* Header */}
-      <header className="border-b border-gray-800 p-4">
+      <header className="border-b border-gray-200 p-4 bg-white shadow-sm">
         <div className="container flex justify-between items-center">
           <AvaLogo />
           <Button 
             variant="ghost" 
             size="icon"
             onClick={() => setApiKeyModalOpen(true)}
-            className="text-gray-400 hover:text-ava-light hover:bg-gray-800"
+            className="text-gray-600 hover:text-gray-800 hover:bg-gray-100"
           >
             <Settings className="h-5 w-5" />
           </Button>
@@ -184,11 +243,11 @@ const Index = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Chat Column */}
           <div className="lg:col-span-2 flex flex-col">
-            <div className="bg-gray-900 rounded-lg shadow-lg border border-gray-800 flex flex-col h-[600px]">
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 flex flex-col h-[600px]">
               {/* Chat Header */}
-              <div className="p-4 border-b border-gray-800">
-                <h2 className="text-xl font-semibold">Chat with <span className="text-ava-neon-green">Ava AI</span></h2>
-                <p className="text-sm text-gray-400">Your personal blood report analyzer</p>
+              <div className="p-4 border-b border-gray-200">
+                <h2 className="text-xl font-semibold">Chat with <span className="text-ava-neon-green">Ava AI</span> <span className="text-sm text-gray-500">(Blood Analysis Expert)</span></h2>
+                <p className="text-sm text-gray-500">Your personal blood report analyzer</p>
               </div>
               
               {/* Chat Window */}
@@ -209,7 +268,7 @@ const Index = () => {
               )}
               
               {/* Message Input */}
-              <div className="p-4 border-t border-gray-800">
+              <div className="p-4 border-t border-gray-200">
                 <MessageInput 
                   onSendMessage={handleSendMessage}
                   placeholder={userName ? "Type your message..." : "Enter your name..."}
@@ -224,15 +283,16 @@ const Index = () => {
             <ReportHistory 
               reports={reports}
               onSelectReport={handleSelectReport}
+              onDeleteReport={handleDeleteReport}
             />
             
             {/* Information Card */}
-            <div className="mt-6 bg-ava-card-bg border border-gray-700 rounded-lg p-5">
+            <div className="mt-6 bg-white border border-gray-200 rounded-lg p-5 shadow-sm">
               <h3 className="flex items-center gap-2 text-lg font-medium mb-3">
                 <FileText className="h-5 w-5 text-ava-neon-green" />
                 How It Works
               </h3>
-              <ol className="space-y-3 text-sm text-gray-300">
+              <ol className="space-y-3 text-sm text-gray-700">
                 <li className="flex gap-2">
                   <span className="flex-shrink-0 w-5 h-5 rounded-full bg-ava-muted flex items-center justify-center text-ava-neon-green text-xs font-medium">1</span>
                   <span>Upload your blood test report (PDF or image)</span>
@@ -250,6 +310,19 @@ const Index = () => {
                   <span>Receive recommendations to improve your results</span>
                 </li>
               </ol>
+            </div>
+            
+            {/* Schedule Card */}
+            <div className="mt-6 bg-white border border-gray-200 rounded-lg p-5 shadow-sm">
+              <h3 className="flex items-center gap-2 text-lg font-medium mb-3">
+                <Calendar className="h-5 w-5 text-ava-neon-green" />
+                Your Schedule
+              </h3>
+              <p className="text-gray-600 text-sm mb-3">Stay on track with your health monitoring schedule</p>
+              <div className="bg-ava-neon-green/10 rounded-lg p-3">
+                <p className="text-sm font-medium">Next Blood Test</p>
+                <p className="text-sm text-gray-600">Recommended: 3 months from your last test</p>
+              </div>
             </div>
           </div>
         </div>

@@ -22,15 +22,19 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
   
   // Message styling based on sender
   const messageBgClass = 
-    sender === 'user' ? 'bg-gray-700' : 
-    sender === 'ava' ? 'bg-ava-muted' : 'bg-blue-900';
+    sender === 'user' ? 'bg-gray-100' : 
+    sender === 'ava' ? 'bg-ava-muted' : 'bg-blue-50';
 
   const alignmentClass = sender === 'user' ? 'justify-end' : 'justify-start';
   
-  // Display name based on sender
+  // Display name and role based on sender
   const senderName = 
     sender === 'user' ? 'You' : 
     sender === 'ava' ? 'Ava AI' : 'Sam';
+    
+  const senderRole =
+    sender === 'user' ? '' :
+    sender === 'ava' ? '(Blood Analysis Expert)' : '(Lab Assistant)';
   
   useEffect(() => {
     if (animateTyping && isNew) {
@@ -49,9 +53,11 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         <Avatar type={sender} size="md" />
         
         <div className={`mx-2 ${sender === 'user' ? 'mr-3' : 'ml-3'}`}>
-          <div className="text-xs text-gray-400 mb-1">{senderName}</div>
+          <div className="text-xs text-gray-500 mb-1">
+            {senderName} {senderRole && <span className="text-gray-400 text-xs">{senderRole}</span>}
+          </div>
           
-          <div className={`${messageBgClass} px-4 py-2 rounded-xl`}>
+          <div className={`${messageBgClass} px-4 py-2 rounded-xl shadow-sm`}>
             {showTyping ? (
               <div className="min-h-6 flex items-center">
                 <div className="typing-indicator">

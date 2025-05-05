@@ -25,14 +25,14 @@ const ProgressBar: React.FC<ProgressBarProps> = ({ stage }) => {
         {stages.map((s, index) => (
           <div 
             key={s.stage}
-            className={`text-xs ${index <= currentStageIndex ? 'text-ava-neon-green' : 'text-gray-500'}`}
+            className={`text-xs ${index <= currentStageIndex ? 'text-ava-neon-green-dark' : 'text-gray-400'}`}
           >
             {s.label}
           </div>
         ))}
       </div>
       
-      <div className="w-full bg-gray-800 h-2 rounded-full overflow-hidden">
+      <div className="w-full bg-gray-100 h-2 rounded-full overflow-hidden">
         <div 
           className="bg-ava-neon-green h-full rounded-full transition-all duration-500 ease-out"
           style={{ 

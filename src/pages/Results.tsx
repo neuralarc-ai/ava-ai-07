@@ -5,13 +5,14 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import AvaLogo from '@/components/AvaLogo';
 import ChatWindow from '@/components/Chat/ChatWindow';
+import MessageInput from '@/components/Chat/MessageInput';
 import ProgressBar, { AnalysisStage } from '@/components/ProgressBar';
 import AnalysisCard, { AnalysisItem } from '@/components/Card/AnalysisCard';
-import { Settings, ArrowLeft } from 'lucide-react';
+import { Settings, ArrowLeft, FileText } from 'lucide-react';
 import { Message } from '@/components/Chat/ChatWindow';
 import { v4 as uuidv4 } from 'uuid';
 
-// Sample data
+// Enhanced sample data with critical action for high-risk items
 const sampleAnalysisItems: AnalysisItem[] = [
   {
     parameter: 'LDL Cholesterol',
@@ -33,8 +34,9 @@ const sampleAnalysisItems: AnalysisItem[] = [
     parameter: 'Triglycerides',
     value: '210 mg/dL',
     referenceRange: '< 150 mg/dL',
-    description: 'Your triglyceride level is high, which can contribute to heart disease.',
+    description: 'Your triglyceride level is high, which can contribute to heart disease and pancreatitis.',
     recommendation: 'Limit sugar and refined carbs, reduce alcohol consumption, increase omega-3 fatty acids, and maintain regular physical activity.',
+    criticalAction: 'Schedule a follow-up appointment within 2 weeks to reassess levels. Consider consultation with a lipid specialist if levels remain elevated despite dietary changes.',
     riskLevel: 'high'
   },
   {
@@ -149,6 +151,7 @@ const Results = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [userName, setUserName] = useState('there');
   const [currentTab, setCurrentTab] = useState('high');
+  const [userMessage, setUserMessage] = useState('');
   
   // Get report data from URL
   const reportId = new URLSearchParams(location.search).get('report');
@@ -178,6 +181,48 @@ const Results = () => {
     return () => clearInterval(interval);
   }, [userName]);
 
+  // Handle user sending a message
+  const handleSendMessage = (message: string) => {
+    // Add user message to chat
+    const userMsg: Message = {
+      id: uuidv4(),
+      sender: 'user',
+      message,
+      timestamp: new Date(),
+      isNew: true
+    };
+    setMessages(prev => [...prev, userMsg]);
+    setUserMessage('');
+    
+    // Simulate AI response
+    setTimeout(() => {
+      let responseMessage = '';
+      
+      // Generate responses based on message content
+      if (message.toLowerCase().includes('triglyceride')) {
+        responseMessage = "Your triglyceride level is concerning at 210 mg/dL, which is well above the recommended range. I'd suggest scheduling a follow-up with your doctor within the next two weeks to discuss potential medication options alongside the dietary changes we've recommended.";
+      } else if (message.toLowerCase().includes('vitamin') || message.toLowerCase().includes('vitamin d')) {
+        responseMessage = "Your Vitamin D deficiency is relatively mild and can be addressed with some simple lifestyle changes. Try to get 15-20 minutes of sun exposure daily, and consider adding a supplement of 1000-2000 IU per day.";
+      } else if (message.toLowerCase().includes('cholesterol') || message.toLowerCase().includes('ldl')) {
+        responseMessage = "Your LDL cholesterol is moderately elevated at 145 mg/dL. Focus on reducing saturated fat intake and increasing soluble fiber in your diet. Foods like oats, beans, and fruits can help lower your levels naturally.";
+      } else if (message.toLowerCase().includes('hemoglobin')) {
+        responseMessage = "Your hemoglobin level is perfectly normal at 14.2 g/dL, which is great news! This indicates your red blood cells are carrying oxygen efficiently throughout your body.";
+      } else {
+        responseMessage = "I'm happy to answer any specific questions you have about your blood test results. Is there a particular parameter you'd like me to explain in more detail?";
+      }
+      
+      // Add AI response to chat
+      const aiMsg: Message = {
+        id: uuidv4(),
+        sender: 'ava',
+        message: responseMessage,
+        timestamp: new Date(),
+        isNew: true
+      };
+      setMessages(prev => [...prev, aiMsg]);
+    }, 1500);
+  };
+
   // Filter analysis items by risk level
   const highRiskItems = sampleAnalysisItems.filter(item => item.riskLevel === 'high');
   const mediumRiskItems = sampleAnalysisItems.filter(item => item.riskLevel === 'medium');
@@ -189,16 +234,16 @@ const Results = () => {
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-ava-dark text-ava-light">
+    <div className="flex flex-col min-h-screen bg-gray-50 text-gray-800">
       {/* Header */}
-      <header className="border-b border-gray-800 p-4">
+      <header className="border-b border-gray-200 p-4 bg-white shadow-sm">
         <div className="container flex justify-between items-center">
           <div className="flex items-center gap-4">
             <Button 
               variant="ghost" 
               size="icon"
               onClick={handleBack}
-              className="text-gray-400 hover:text-ava-light hover:bg-gray-800"
+              className="text-gray-600 hover:text-gray-800 hover:bg-gray-100"
             >
               <ArrowLeft className="h-5 w-5" />
             </Button>
@@ -207,7 +252,7 @@ const Results = () => {
           <Button 
             variant="ghost" 
             size="icon"
-            className="text-gray-400 hover:text-ava-light hover:bg-gray-800"
+            className="text-gray-600 hover:text-gray-800 hover:bg-gray-100"
           >
             <Settings className="h-5 w-5" />
           </Button>
@@ -222,11 +267,11 @@ const Results = () => {
         </div>
         
         {/* Chat Window */}
-        <div className="bg-gray-900 rounded-lg shadow-lg border border-gray-800 mb-8">
-          <div className="p-4 border-b border-gray-800">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-8">
+          <div className="p-4 border-b border-gray-200">
             <h2 className="text-xl font-semibold">Analysis in Progress</h2>
-            <p className="text-sm text-gray-400">
-              Ava AI and Sam are analyzing your blood report
+            <p className="text-sm text-gray-500">
+              Ava AI <span className="text-xs">(Blood Analysis Expert)</span> and Sam <span className="text-xs">(Lab Assistant)</span> are analyzing your blood report
             </p>
           </div>
           
@@ -237,6 +282,15 @@ const Results = () => {
               whoIsTyping={stage !== 'complete' ? (Math.random() > 0.5 ? 'ava' : 'sam') : undefined}
             />
           </div>
+          
+          {stage === 'complete' && (
+            <div className="p-4 border-t border-gray-200">
+              <MessageInput 
+                onSendMessage={handleSendMessage} 
+                placeholder="Ask about your results..." 
+              />
+            </div>
+          )}
         </div>
         
         {/* Results Section - Only shown when analysis is complete */}
@@ -244,26 +298,26 @@ const Results = () => {
           <div className="animate-fade-in">
             <div className="mb-6">
               <h2 className="text-2xl font-bold mb-2">Your Analysis Results</h2>
-              <p className="text-gray-400">
+              <p className="text-gray-500">
                 We've analyzed your blood report and categorized findings by risk level
               </p>
             </div>
             
             <Tabs defaultValue="high" value={currentTab} onValueChange={setCurrentTab}>
-              <TabsList className="mb-6 bg-gray-800">
-                <TabsTrigger value="high" className="data-[state=active]:bg-red-900 data-[state=active]:text-white">
+              <TabsList className="mb-6 bg-gray-100">
+                <TabsTrigger value="high" className="data-[state=active]:bg-red-100 data-[state=active]:text-red-800">
                   High Risk ({highRiskItems.length})
                 </TabsTrigger>
-                <TabsTrigger value="medium" className="data-[state=active]:bg-orange-900 data-[state=active]:text-white">
+                <TabsTrigger value="medium" className="data-[state=active]:bg-orange-100 data-[state=active]:text-orange-800">
                   Medium Risk ({mediumRiskItems.length})
                 </TabsTrigger>
-                <TabsTrigger value="low" className="data-[state=active]:bg-yellow-900 data-[state=active]:text-white">
+                <TabsTrigger value="low" className="data-[state=active]:bg-yellow-100 data-[state=active]:text-yellow-800">
                   Low Risk ({lowRiskItems.length})
                 </TabsTrigger>
-                <TabsTrigger value="normal" className="data-[state=active]:bg-green-900 data-[state=active]:text-white">
+                <TabsTrigger value="normal" className="data-[state=active]:bg-green-100 data-[state=active]:text-green-800">
                   Normal ({normalItems.length})
                 </TabsTrigger>
-                <TabsTrigger value="all" className="data-[state=active]:bg-blue-900 data-[state=active]:text-white">
+                <TabsTrigger value="all" className="data-[state=active]:bg-blue-100 data-[state=active]:text-blue-800">
                   All Parameters
                 </TabsTrigger>
               </TabsList>
@@ -271,14 +325,29 @@ const Results = () => {
               <TabsContent value="high" className="animate-fade-in">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {highRiskItems.map((item, index) => (
-                    <AnalysisCard key={`high-${index}`} item={item} />
+                    <AnalysisCard key={`high-${index}`} item={{
+                      ...item,
+                      criticalAction: item.criticalAction || 'Consult with your healthcare provider as soon as possible to discuss these elevated results and potential treatment options.'
+                    }} />
                   ))}
                   {highRiskItems.length === 0 && (
-                    <div className="col-span-full text-center py-10 text-gray-400">
+                    <div className="col-span-full text-center py-10 text-gray-500">
                       No high risk parameters found
                     </div>
                   )}
                 </div>
+                
+                {highRiskItems.length > 0 && (
+                  <div className="mt-6 p-5 bg-red-50 border border-red-200 rounded-lg">
+                    <h3 className="font-semibold text-red-800 flex items-center gap-2 mb-2">
+                      <FileText className="h-5 w-5" />
+                      Critical Summary
+                    </h3>
+                    <p className="text-red-700">
+                      Your high-risk parameters require immediate attention. Please consider scheduling a follow-up appointment with your healthcare provider within the next 2 weeks to discuss these results and potential treatment options.
+                    </p>
+                  </div>
+                )}
               </TabsContent>
               
               <TabsContent value="medium" className="animate-fade-in">
@@ -287,7 +356,7 @@ const Results = () => {
                     <AnalysisCard key={`medium-${index}`} item={item} />
                   ))}
                   {mediumRiskItems.length === 0 && (
-                    <div className="col-span-full text-center py-10 text-gray-400">
+                    <div className="col-span-full text-center py-10 text-gray-500">
                       No medium risk parameters found
                     </div>
                   )}
@@ -300,7 +369,7 @@ const Results = () => {
                     <AnalysisCard key={`low-${index}`} item={item} />
                   ))}
                   {lowRiskItems.length === 0 && (
-                    <div className="col-span-full text-center py-10 text-gray-400">
+                    <div className="col-span-full text-center py-10 text-gray-500">
                       No low risk parameters found
                     </div>
                   )}
@@ -313,7 +382,7 @@ const Results = () => {
                     <AnalysisCard key={`normal-${index}`} item={item} />
                   ))}
                   {normalItems.length === 0 && (
-                    <div className="col-span-full text-center py-10 text-gray-400">
+                    <div className="col-span-full text-center py-10 text-gray-500">
                       No normal parameters found
                     </div>
                   )}
