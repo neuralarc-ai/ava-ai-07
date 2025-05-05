@@ -63,7 +63,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
             ) : animateTyping && isNew ? (
               <TypeAnimation
                 sequence={[message]}
-                speed={{ type: 'keyStrokeDelayInMs', value: typingSpeed }}
+                speed={typingSpeed}
                 cursor={false}
               />
             ) : (
