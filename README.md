@@ -1,73 +1,48 @@
-# Welcome to your Lovable project
 
-## Project info
+# Ava AI - Blood Report Analyzer
 
-**URL**: https://lovable.dev/projects/5199191f-81bd-4216-a5b1-97e5427d0d6e
+## Overview
 
-## How can I edit this code?
+Ava AI is a smart, elegant web application designed to help users understand their blood test results. Users can upload their blood reports (PDFs/images), and the system analyzes the data using the OpenAI API, presenting the findings through a conversational interface between two expert agents: Ava AI (Blood Analyzer) and Sam (Lab Expert).
 
-There are several ways of editing your application.
+## Features
 
-**Use Lovable**
+- **Dark Mode UI + Modern Aesthetic**: Sleek design with neon green accents
+- **Upload Flow**: Simple interface to upload blood reports
+- **Real-time Agent Conversation**: Simulated conversation between Ava AI and Sam analyzing the report
+- **OpenAI API Integration**: Secure handling of API keys
+- **Post Analysis Dashboard**: Results categorized by risk level with detailed explanations
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/5199191f-81bd-4216-a5b1-97e5427d0d6e) and start prompting.
+## Tech Stack
 
-Changes made via Lovable will be committed automatically to this repo.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
-```
-
-**Edit a file directly in GitHub**
-
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
-
-**Use GitHub Codespaces**
-
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
-
-## What technologies are used for this project?
-
-This project is built with:
-
-- Vite
-- TypeScript
 - React
-- shadcn-ui
-- Tailwind CSS
+- TypeScript
+- TailwindCSS
+- ShadcnUI
+- OpenAI API
 
-## How can I deploy this project?
+## Getting Started
 
-Simply open [Lovable](https://lovable.dev/projects/5199191f-81bd-4216-a5b1-97e5427d0d6e) and click on Share -> Publish.
+1. Clone the repository
+2. Install dependencies with `npm install`
+3. Run the development server with `npm run dev`
+4. Open [http://localhost:8080](http://localhost:8080) in your browser
 
-## Can I connect a custom domain to my Lovable project?
+## Usage
 
-Yes, you can!
+1. Enter your name when prompted
+2. Upload your blood report (PDF or image)
+3. Enter your OpenAI API key in the settings modal
+4. Watch as Ava AI and Sam analyze your report
+5. View your results categorized by risk level
+6. Click on "How to fix it" for personalized recommendations
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+## License
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Acknowledgements
+
+- Lovable for the project infrastructure
+- OpenAI for the API
+- ShadcnUI for the components
