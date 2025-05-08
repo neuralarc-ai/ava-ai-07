@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -11,138 +10,7 @@ import AnalysisCard, { AnalysisItem } from '@/components/Card/AnalysisCard';
 import { Settings, ArrowLeft, FileText } from 'lucide-react';
 import { Message } from '@/components/Chat/ChatWindow';
 import { v4 as uuidv4 } from 'uuid';
-
-// Enhanced sample data with critical action for high-risk items
-const sampleAnalysisItems: AnalysisItem[] = [
-  {
-    parameter: 'LDL Cholesterol',
-    value: '145 mg/dL',
-    referenceRange: '< 100 mg/dL',
-    description: 'Your LDL (bad cholesterol) is elevated, which may increase risk of heart disease.',
-    recommendation: 'Consider reducing saturated fat intake, increasing fiber, regular exercise, and possibly medication if lifestyle changes aren\'t enough.',
-    riskLevel: 'medium'
-  },
-  {
-    parameter: 'Vitamin D',
-    value: '18 ng/mL',
-    referenceRange: '30-50 ng/mL',
-    description: 'Your Vitamin D level is low, which can affect bone health and immune function.',
-    recommendation: 'Increase sun exposure (15-20 minutes daily), consume Vitamin D-rich foods like fatty fish and fortified dairy, or consider supplements (1000-2000 IU daily).',
-    riskLevel: 'low'
-  },
-  {
-    parameter: 'Triglycerides',
-    value: '210 mg/dL',
-    referenceRange: '< 150 mg/dL',
-    description: 'Your triglyceride level is high, which can contribute to heart disease and pancreatitis.',
-    recommendation: 'Limit sugar and refined carbs, reduce alcohol consumption, increase omega-3 fatty acids, and maintain regular physical activity.',
-    criticalAction: 'Schedule a follow-up appointment within 2 weeks to reassess levels. Consider consultation with a lipid specialist if levels remain elevated despite dietary changes.',
-    riskLevel: 'high'
-  },
-  {
-    parameter: 'Hemoglobin',
-    value: '14.2 g/dL',
-    referenceRange: '12-15.5 g/dL',
-    description: 'Your hemoglobin level is normal, indicating good oxygen-carrying capacity.',
-    recommendation: 'Continue with your current diet and exercise habits to maintain healthy levels.',
-    riskLevel: 'normal'
-  },
-];
-
-// Simulated conversation between Ava and Sam
-const simulatedConversation: (stage: AnalysisStage, userName: string) => Message[] = (stage, userName) => {
-  const baseMessages: Message[] = [
-    {
-      id: uuidv4(),
-      sender: 'ava',
-      message: `I'm reviewing ${userName}'s blood report now...`,
-      timestamp: new Date(Date.now() - 10000),
-      isNew: false
-    },
-    {
-      id: uuidv4(),
-      sender: 'sam',
-      message: "Great, let's start by checking the lipid panel.",
-      timestamp: new Date(Date.now() - 9000),
-      isNew: false
-    }
-  ];
-
-  if (stage === 'reading' || stage === 'analyzing') {
-    return baseMessages;
-  }
-
-  const discussingMessages: Message[] = [
-    ...baseMessages,
-    {
-      id: uuidv4(),
-      sender: 'ava',
-      message: "I'm scanning the lipid panel now... hmm, I'm seeing elevated LDL at 145 mg/dL. That's above the recommended level.",
-      timestamp: new Date(Date.now() - 8000),
-      isNew: false
-    },
-    {
-      id: uuidv4(),
-      sender: 'sam',
-      message: "Yes, I see that too. Let's flag it under Moderate Risk and add dietary guidance. I also notice the triglycerides are quite high at 210 mg/dL.",
-      timestamp: new Date(Date.now() - 7000),
-      isNew: false
-    }
-  ];
-
-  if (stage === 'discussing') {
-    return discussingMessages;
-  }
-
-  const finalizingMessages: Message[] = [
-    ...discussingMessages,
-    {
-      id: uuidv4(),
-      sender: 'ava',
-      message: "Also noticing Vitamin D is low at 18 ng/mL. We'll suggest sunlight exposure and food-based fixes.",
-      timestamp: new Date(Date.now() - 6000),
-      isNew: false
-    },
-    {
-      id: uuidv4(),
-      sender: 'sam',
-      message: "Good catch. Low vitamin D can affect immune function and bone health. Let's categorize it as Low Risk since it's easy to address.",
-      timestamp: new Date(Date.now() - 5000),
-      isNew: false
-    }
-  ];
-
-  if (stage === 'finalizing') {
-    return finalizingMessages;
-  }
-
-  const completeMessages: Message[] = [
-    ...finalizingMessages,
-    {
-      id: uuidv4(),
-      sender: 'ava',
-      message: `I've completed my analysis of ${userName}'s blood work. Here's what we found: elevated LDL cholesterol (moderate risk), high triglycerides (high risk), and low vitamin D (low risk). All other parameters look normal.`,
-      timestamp: new Date(Date.now() - 4000),
-      isNew: false
-    },
-    {
-      id: uuidv4(),
-      sender: 'sam',
-      message: `Perfect! I've prepared lifestyle recommendations for each finding. Let's present these results to ${userName} now with clear actionable steps.`,
-      timestamp: new Date(Date.now() - 3000),
-      isNew: false
-    },
-    {
-      id: uuidv4(),
-      sender: 'ava',
-      message: `${userName}, your results are ready! You can now view the detailed analysis below. We've organized everything by risk level for clarity. Please let me know if you have any questions.`,
-      timestamp: new Date(Date.now() - 1000),
-      isNew: true
-    }
-  ];
-
-  return completeMessages;
-};
+import { processPDF, BloodTestResult } from '@/services/pdfService';
 
 const Results = () => {
   const navigate = useNavigate();
@@ -152,86 +20,203 @@ const Results = () => {
   const [userName, setUserName] = useState('there');
   const [currentTab, setCurrentTab] = useState('high');
   const [userMessage, setUserMessage] = useState('');
+  const [analysisResults, setAnalysisResults] = useState<BloodTestResult[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
+  const maxRetries = 3;
   
   // Get report data from URL
   const reportId = new URLSearchParams(location.search).get('report');
   
-  // Simulate the analysis process
+  // Add a message to the chat
+  const addMessage = (sender: 'user' | 'ava', message: string) => {
+    const newMessage: Message = {
+      id: uuidv4(),
+      sender,
+      message,
+      timestamp: new Date(),
+      isNew: true
+    };
+    setMessages(prev => [...prev, newMessage]);
+  };
+
+  // Process the PDF and analyze results
   useEffect(() => {
+    const processReport = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        // Get the report file from localStorage
+        const reports = JSON.parse(localStorage.getItem('blood_reports') || '[]');
+        const currentReport = reports.find((r: any) => r.id === reportId);
+        
+        if (!currentReport) {
+          throw new Error('Report not found');
+        }
+        
+        // Get the file from localStorage
+        const base64Data = localStorage.getItem(`report_file_${reportId}`);
+        if (!base64Data) {
+          throw new Error('Report file not found');
+        }
+        
+        // Convert base64 back to File
+        const byteCharacters = atob(base64Data);
+        const byteArrays = [];
+        
+        for (let offset = 0; offset < byteCharacters.length; offset += 512) {
+          const slice = byteCharacters.slice(offset, offset + 512);
+          
+          const byteNumbers = new Array(slice.length);
+          for (let i = 0; i < slice.length; i++) {
+            byteNumbers[i] = slice.charCodeAt(i);
+          }
+          
+          const byteArray = new Uint8Array(byteNumbers);
+          byteArrays.push(byteArray);
+        }
+        
+        const blob = new Blob(byteArrays, { type: 'application/pdf' });
+        const file = new File([blob], currentReport.name, { type: 'application/pdf' });
+        
+        // Start the conversation
+        addMessage('ava', `Hello ${userName}! I'm analyzing your blood report now. This might take a few moments.`);
+        
+        // Add a message about the file
+        addMessage('ava', `I see you've uploaded "${currentReport.name}". Let me take a look at it.`);
+        
+        // Add a message about the analysis process
+        addMessage('ava', "I'm extracting all the parameters and values from your report. I'll categorize them by risk level and provide detailed explanations.");
+        
+        // Process the PDF
+        const results = await processPDF(file);
+        setAnalysisResults(results);
+        
+        // Update the analysis stage
+        setStage('complete');
+        
+        // Add completion message with a summary
+        const highRiskCount = results.filter(r => r.riskLevel === 'high').length;
+        const mediumRiskCount = results.filter(r => r.riskLevel === 'medium').length;
+        const lowRiskCount = results.filter(r => r.riskLevel === 'low').length;
+        const normalCount = results.filter(r => r.riskLevel === 'normal').length;
+        
+        addMessage('ava', `I've completed analyzing your report! Here's a quick summary:`);
+        addMessage('ava', `• High Risk Parameters: ${highRiskCount}
+• Medium Risk Parameters: ${mediumRiskCount}
+• Low Risk Parameters: ${lowRiskCount}
+• Normal Parameters: ${normalCount}`);
+        
+        addMessage('ava', "You can find detailed results below, categorized by risk level. Feel free to ask me any questions about specific parameters or your overall health status.");
+        
+      } catch (err) {
+        console.error('Error processing report:', err);
+        const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+        
+        // Check if it's a worker initialization error
+        if (errorMessage.includes('Failed to initialize PDF.js worker')) {
+          if (retryCount < maxRetries) {
+            setRetryCount(prev => prev + 1);
+            addMessage('ava', "I'm having a bit of trouble processing your report. Let me try again...");
+            // Wait for 2 seconds before retrying
+            setTimeout(() => {
+              processReport();
+            }, 2000);
+            return;
+          }
+          setError('Unable to initialize PDF processing. Please refresh the page and try again.');
+          addMessage('ava', "I apologize, but I'm having trouble processing your report. Please try refreshing the page.");
+        } else {
+          setError(`Failed to process report: ${errorMessage}`);
+          addMessage('ava', "I apologize, but I encountered an error while analyzing your report. Please try again.");
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+    
     // Try to get username from localStorage
     const storedName = localStorage.getItem('user_name');
     if (storedName) {
       setUserName(storedName);
     }
     
-    // Simulate the analysis stages
-    const stages: AnalysisStage[] = ['reading', 'analyzing', 'discussing', 'finalizing', 'complete'];
-    let currentStageIndex = 0;
-    
-    const interval = setInterval(() => {
-      if (currentStageIndex < stages.length) {
-        setStage(stages[currentStageIndex]);
-        setMessages(simulatedConversation(stages[currentStageIndex], userName));
-        currentStageIndex++;
-      } else {
-        clearInterval(interval);
-      }
-    }, 3000); // Change stage every 3 seconds
-    
-    return () => clearInterval(interval);
-  }, [userName]);
+    // Start processing the report
+    processReport();
+  }, [reportId, userName, retryCount]);
 
   // Handle user sending a message
   const handleSendMessage = (message: string) => {
     // Add user message to chat
-    const userMsg: Message = {
-      id: uuidv4(),
-      sender: 'user',
-      message,
-      timestamp: new Date(),
-      isNew: true
-    };
-    setMessages(prev => [...prev, userMsg]);
+    addMessage('user', message);
     setUserMessage('');
     
-    // Simulate AI response
+    // Generate response based on the analysis results
     setTimeout(() => {
       let responseMessage = '';
       
-      // Generate responses based on message content
-      if (message.toLowerCase().includes('triglyceride')) {
-        responseMessage = "Your triglyceride level is concerning at 210 mg/dL, which is well above the recommended range. I'd suggest scheduling a follow-up with your doctor within the next two weeks to discuss potential medication options alongside the dietary changes we've recommended.";
-      } else if (message.toLowerCase().includes('vitamin') || message.toLowerCase().includes('vitamin d')) {
-        responseMessage = "Your Vitamin D deficiency is relatively mild and can be addressed with some simple lifestyle changes. Try to get 15-20 minutes of sun exposure daily, and consider adding a supplement of 1000-2000 IU per day.";
-      } else if (message.toLowerCase().includes('cholesterol') || message.toLowerCase().includes('ldl')) {
-        responseMessage = "Your LDL cholesterol is moderately elevated at 145 mg/dL. Focus on reducing saturated fat intake and increasing soluble fiber in your diet. Foods like oats, beans, and fruits can help lower your levels naturally.";
-      } else if (message.toLowerCase().includes('hemoglobin')) {
-        responseMessage = "Your hemoglobin level is perfectly normal at 14.2 g/dL, which is great news! This indicates your red blood cells are carrying oxygen efficiently throughout your body.";
+      // Check if the message mentions any specific parameter
+      const mentionedParameter = analysisResults.find(result => 
+        message.toLowerCase().includes(result.parameter.toLowerCase())
+      );
+      
+      if (mentionedParameter) {
+        responseMessage = `${mentionedParameter.description} ${mentionedParameter.recommendation}`;
+        if (mentionedParameter.criticalAction) {
+          responseMessage += ` ${mentionedParameter.criticalAction}`;
+        }
+      } else if (message.toLowerCase().includes('summary') || message.toLowerCase().includes('overall')) {
+        const highRiskCount = analysisResults.filter(r => r.riskLevel === 'high').length;
+        const mediumRiskCount = analysisResults.filter(r => r.riskLevel === 'medium').length;
+        const lowRiskCount = analysisResults.filter(r => r.riskLevel === 'low').length;
+        const normalCount = analysisResults.filter(r => r.riskLevel === 'normal').length;
+        
+        responseMessage = `Here's a summary of your results:
+• High Risk Parameters: ${highRiskCount}
+• Medium Risk Parameters: ${mediumRiskCount}
+• Low Risk Parameters: ${lowRiskCount}
+• Normal Parameters: ${normalCount}
+
+${highRiskCount > 0 ? '⚠️ You have some parameters that need immediate attention. Please consult your healthcare provider.' : 
+  mediumRiskCount > 0 ? '📋 You have some parameters that should be monitored. Consider discussing these with your healthcare provider.' :
+  '✅ Your results are generally within normal ranges.'}`;
       } else {
-        responseMessage = "I'm happy to answer any specific questions you have about your blood test results. Is there a particular parameter you'd like me to explain in more detail?";
+        responseMessage = "I'm happy to answer any specific questions you have about your blood test results. You can ask about particular parameters, or I can provide an overall summary of your results.";
       }
       
       // Add AI response to chat
-      const aiMsg: Message = {
-        id: uuidv4(),
-        sender: 'ava',
-        message: responseMessage,
-        timestamp: new Date(),
-        isNew: true
-      };
-      setMessages(prev => [...prev, aiMsg]);
+      addMessage('ava', responseMessage);
     }, 1500);
   };
 
   // Filter analysis items by risk level
-  const highRiskItems = sampleAnalysisItems.filter(item => item.riskLevel === 'high');
-  const mediumRiskItems = sampleAnalysisItems.filter(item => item.riskLevel === 'medium');
-  const lowRiskItems = sampleAnalysisItems.filter(item => item.riskLevel === 'low');
-  const normalItems = sampleAnalysisItems.filter(item => item.riskLevel === 'normal');
+  const highRiskItems = analysisResults.filter(item => item.riskLevel === 'high');
+  const mediumRiskItems = analysisResults.filter(item => item.riskLevel === 'medium');
+  const lowRiskItems = analysisResults.filter(item => item.riskLevel === 'low');
+  const normalItems = analysisResults.filter(item => item.riskLevel === 'normal');
 
   const handleBack = () => {
     navigate('/');
   };
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="text-red-500 text-xl mb-4">Error</div>
+          <p className="text-gray-600">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+          >
+            Refresh Page
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-50 text-gray-800">
@@ -271,7 +256,7 @@ const Results = () => {
           <div className="p-4 border-b border-gray-200">
             <h2 className="text-xl font-semibold">Analysis in Progress</h2>
             <p className="text-sm text-gray-500">
-              Ava AI <span className="text-xs">(Blood Analysis Expert)</span> and Sam <span className="text-xs">(Lab Assistant)</span> are analyzing your blood report
+              Ava AI <span className="text-xs">(Blood Analysis Expert)</span> is analyzing your blood report
             </p>
           </div>
           
@@ -279,18 +264,17 @@ const Results = () => {
             <ChatWindow 
               messages={messages}
               isTyping={stage !== 'complete'}
-              whoIsTyping={stage !== 'complete' ? (Math.random() > 0.5 ? 'ava' : 'sam') : undefined}
+              whoIsTyping={stage !== 'complete' ? 'ava' : undefined}
             />
           </div>
           
-          {stage === 'complete' && (
-            <div className="p-4 border-t border-gray-200">
-              <MessageInput 
-                onSendMessage={handleSendMessage} 
-                placeholder="Ask about your results..." 
-              />
-            </div>
-          )}
+          <div className="p-4 border-t border-gray-200">
+            <MessageInput 
+              onSendMessage={handleSendMessage} 
+              placeholder={stage === 'complete' ? "Ask about your results..." : "Please wait while I analyze your report..."}
+              disabled={stage !== 'complete'}
+            />
+          </div>
         </div>
         
         {/* Results Section - Only shown when analysis is complete */}
@@ -325,10 +309,7 @@ const Results = () => {
               <TabsContent value="high" className="animate-fade-in">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {highRiskItems.map((item, index) => (
-                    <AnalysisCard key={`high-${index}`} item={{
-                      ...item,
-                      criticalAction: item.criticalAction || 'Consult with your healthcare provider as soon as possible to discuss these elevated results and potential treatment options.'
-                    }} />
+                    <AnalysisCard key={`high-${index}`} item={item} />
                   ))}
                   {highRiskItems.length === 0 && (
                     <div className="col-span-full text-center py-10 text-gray-500">
@@ -391,7 +372,7 @@ const Results = () => {
               
               <TabsContent value="all" className="animate-fade-in">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {sampleAnalysisItems.map((item, index) => (
+                  {analysisResults.map((item, index) => (
                     <AnalysisCard key={`all-${index}`} item={item} />
                   ))}
                 </div>

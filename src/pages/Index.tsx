@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import AvaLogo from '@/components/AvaLogo';
@@ -116,75 +115,82 @@ const Index = () => {
     }
   };
 
-  const handleFileSelected = (file: File) => {
-    // Create a new report
-    const newReport: Report = {
-      id: uuidv4(),
-      name: file.name,
-      date: new Date().toLocaleDateString(),
-      isActive: true
-    };
-    
-    // Deactivate any previously active reports
-    const updatedReports = reports.map(report => ({
-      ...report,
-      isActive: false
-    }));
-    
-    // Add the new report to the list
-    const allReports = [...updatedReports, newReport];
-    setReports(allReports);
-    
-    // Save to localStorage
-    localStorage.setItem('blood_reports', JSON.stringify(allReports));
-    
-    // Add a message about the upload
-    const uploadMessage: Message = {
-      id: uuidv4(),
-      sender: 'user',
-      message: `Uploaded: ${file.name}`,
-      timestamp: new Date(),
-      isNew: true
-    };
-    setMessages(prev => [...prev, uploadMessage]);
-    
-    // Check if API key is available
-    if (!apiKey) {
-      setApiKeyModalOpen(true);
-    } else {
-      // Simulate processing and redirect to results page
-      simulateProcessing(file, newReport.id);
-    }
-  };
-
-  const simulateProcessing = (file: File, reportId: string) => {
-    // Add an upload confirmation message from Ava
-    const confirmationMessage: Message = {
-      id: uuidv4(),
-      sender: 'ava',
-      message: `Thanks for uploading your report! I'll analyze it right away.`,
-      timestamp: new Date(),
-      isNew: true
-    };
-    
-    setMessages(prev => [...prev, confirmationMessage]);
-    
-    // After a short delay, add a message from Sam
-    setTimeout(() => {
-      const samMessage: Message = {
+  const handleFileSelected = async (file: File) => {
+    try {
+      // Create a new report
+      const newReport: Report = {
         id: uuidv4(),
-        sender: 'sam',
-        message: `I'll assist in interpreting the clinical values in your report. We'll have the results ready shortly.`,
-        timestamp: new Date(),
-        isNew: true
+        name: file.name,
+        date: new Date().toLocaleDateString(),
+        isActive: true
       };
-      setMessages(prev => [...prev, samMessage]);
       
-      // Then navigate to the results page
-      setTimeout(() => {
-        navigate(`/results?report=${reportId}`);
-      }, 2000);
-    }, 2000);
+      // Deactivate any previously active reports
+      const updatedReports = reports.map(report => ({
+        ...report,
+        isActive: false
+      }));
+      
+      // Add the new report to the list
+      const allReports = [...updatedReports, newReport];
+      setReports(allReports);
+      
+      // Save to localStorage
+      localStorage.setItem('blood_reports', JSON.stringify(allReports));
+      
+      // Convert file to base64 and store in localStorage
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const base64 = e.target?.result as string;
+          // Store the base64 string without the data URL prefix
+          const base64Data = base64.split(',')[1];
+          localStorage.setItem(`report_file_${newReport.id}`, base64Data);
+          
+          // Add a message about the upload
+          const uploadMessage: Message = {
+            id: uuidv4(),
+            sender: 'user',
+            message: `Uploaded: ${file.name}`,
+            timestamp: new Date(),
+            isNew: true
+          };
+          setMessages(prev => [...prev, uploadMessage]);
+          
+          // Check if API key is available
+          if (!apiKey) {
+            setApiKeyModalOpen(true);
+          } else {
+            // Navigate to results page
+            navigate(`/results?report=${newReport.id}`);
+          }
+        } catch (error) {
+          console.error('Error storing file:', error);
+          toast({
+            title: "Error",
+            description: "Failed to store the uploaded file. Please try again.",
+            variant: "destructive"
+          });
+        }
+      };
+      
+      reader.onerror = () => {
+        toast({
+          title: "Error",
+          description: "Failed to read the uploaded file. Please try again.",
+          variant: "destructive"
+        });
+      };
+      
+      reader.readAsDataURL(file);
+    } catch (error) {
+      console.error('Error handling file upload:', error);
+      toast({
+        title: "Error",
+        description: "Failed to process the uploaded file. Please try again.",
+        variant: "destructive"
+      });
+    }
   };
 
   const handleSaveApiKey = (key: string, model: string) => {
