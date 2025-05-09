@@ -11,6 +11,7 @@ import { Settings, ArrowLeft, FileText } from 'lucide-react';
 import { Message } from '@/components/Chat/ChatWindow';
 import { v4 as uuidv4 } from 'uuid';
 import { processPDF, BloodTestResult } from '@/services/pdfService';
+import { useReportFile } from '@/ReportFileContext';
 
 const Results = () => {
   const navigate = useNavigate();
@@ -25,6 +26,7 @@ const Results = () => {
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const maxRetries = 3;
+  const { file } = useReportFile();
   
   // Get report data from URL
   const reportId = new URLSearchParams(location.search).get('report');
@@ -47,49 +49,20 @@ const Results = () => {
       try {
         setLoading(true);
         setError(null);
-
-        // Get the report file from localStorage
+        // Get the report file from context
+        if (!file) {
+          throw new Error('No report file found. Please upload your report again.');
+        }
+        // Get the report metadata from localStorage
         const reports = JSON.parse(localStorage.getItem('blood_reports') || '[]');
         const currentReport = reports.find((r: any) => r.id === reportId);
-        
         if (!currentReport) {
           throw new Error('Report not found');
         }
-        
-        // Get the file from localStorage
-        const base64Data = localStorage.getItem(`report_file_${reportId}`);
-        if (!base64Data) {
-          throw new Error('Report file not found');
-        }
-        
-        // Convert base64 back to File
-        const byteCharacters = atob(base64Data);
-        const byteArrays = [];
-        
-        for (let offset = 0; offset < byteCharacters.length; offset += 512) {
-          const slice = byteCharacters.slice(offset, offset + 512);
-          
-          const byteNumbers = new Array(slice.length);
-          for (let i = 0; i < slice.length; i++) {
-            byteNumbers[i] = slice.charCodeAt(i);
-          }
-          
-          const byteArray = new Uint8Array(byteNumbers);
-          byteArrays.push(byteArray);
-        }
-        
-        const blob = new Blob(byteArrays, { type: 'application/pdf' });
-        const file = new File([blob], currentReport.name, { type: 'application/pdf' });
-        
         // Start the conversation
         addMessage('ava', `Hello ${userName}! I'm analyzing your blood report now. This might take a few moments.`);
-        
-        // Add a message about the file
         addMessage('ava', `I see you've uploaded "${currentReport.name}". Let me take a look at it.`);
-        
-        // Add a message about the analysis process
         addMessage('ava', "I'm extracting all the parameters and values from your report. I'll categorize them by risk level and provide detailed explanations.");
-        
         // Process the PDF
         const results = await processPDF(file);
         setAnalysisResults(results);
@@ -145,7 +118,7 @@ const Results = () => {
     
     // Start processing the report
     processReport();
-  }, [reportId, userName, retryCount]);
+  }, [reportId, userName, retryCount, file]);
 
   // Handle user sending a message
   const handleSendMessage = (message: string) => {
@@ -234,13 +207,6 @@ ${highRiskCount > 0 ? '⚠️ You have some parameters that need immediate atten
             </Button>
             <AvaLogo />
           </div>
-          <Button 
-            variant="ghost" 
-            size="icon"
-            className="text-gray-600 hover:text-gray-800 hover:bg-gray-100"
-          >
-            <Settings className="h-5 w-5" />
-          </Button>
         </div>
       </header>
       

@@ -22,50 +22,50 @@ async function convertFileToBase64(file: File): Promise<string> {
   });
 }
 
-async function performOCRWithModel(file: File, apiKey: string): Promise<OCRResult | null> {
+async function performOCRWithModel(file: File): Promise<OCRResult | null> {
   try {
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error('Gemini API key not found in environment variables');
+    }
+
     // Handle PDF files
     if (file.type === 'application/pdf') {
       const { text, images } = await extractTextFromPDF(file);
       
-      // If we have images in the PDF, process them with OpenAI
+      // If we have images in the PDF, process them with Gemini
       if (images.length > 0) {
         const imageResults = await Promise.all(
           images.map(async (image) => {
-            const response = await fetch("https://api.openai.com/v1/chat/completions", {
+            const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-pro-vision:generateContent", {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
-                "Authorization": `Bearer ${apiKey}`
+                "x-goog-api-key": apiKey
               },
               body: JSON.stringify({
-                model: "gpt-4-vision-preview",
-                messages: [
-                  {
-                    role: "user",
-                    content: [
-                      { type: "text", text: "Extract all text from this image:" },
-                      { type: "image_url", image_url: { url: image } }
-                    ]
-                  }
-                ],
-                max_tokens: 4000
+                contents: [{
+                  parts: [
+                    { text: "Extract all text from this image:" },
+                    { inline_data: { mime_type: "image/jpeg", data: image.split(',')[1] } }
+                  ]
+                }]
               })
             });
             
             if (!response.ok) {
-              throw new Error(`OpenAI API error: ${response.status}`);
+              throw new Error(`Gemini API error: ${response.status}`);
             }
             
             const data = await response.json();
-            return data.choices?.[0]?.message?.content || '';
+            return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
           })
         );
         
         // Combine PDF text and image OCR results
         return {
           text: text + '\n' + imageResults.join('\n'),
-          modelUsed: 'gpt-4-vision-preview'
+          modelUsed: 'gemini-pro-vision'
         };
       }
       
@@ -76,35 +76,30 @@ async function performOCRWithModel(file: File, apiKey: string): Promise<OCRResul
     // Handle image files
     const base64File = await convertFileToBase64(file);
     
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-pro-vision:generateContent", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`
+        "x-goog-api-key": apiKey
       },
       body: JSON.stringify({
-        model: "gpt-4-vision-preview",
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "text", text: "Extract all text from this health report:" },
-              { type: "image_url", image_url: { url: base64File } }
-            ]
-          }
-        ],
-        max_tokens: 4000
+        contents: [{
+          parts: [
+            { text: "Extract all text from this health report:" },
+            { inline_data: { mime_type: file.type, data: base64File.split(',')[1] } }
+          ]
+        }]
       })
     });
     
     if (!response.ok) {
       const errorData = await response.json();
-      console.error("OpenAI API error:", errorData);
-      throw new Error(`OpenAI API error: ${response.status} - ${errorData.error?.message || 'Unknown error'}`);
+      console.error("Gemini API error:", errorData);
+      throw new Error(`Gemini API error: ${response.status} - ${errorData.error?.message || 'Unknown error'}`);
     }
     
     const data = await response.json();
-    const extractedText = data.choices?.[0]?.message?.content || '';
+    const extractedText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
     
     if (!extractedText.trim()) {
       throw new Error('No text could be extracted from the image');
@@ -112,7 +107,7 @@ async function performOCRWithModel(file: File, apiKey: string): Promise<OCRResul
     
     return {
       text: extractedText,
-      modelUsed: 'gpt-4-vision-preview'
+      modelUsed: 'gemini-pro-vision'
     };
   } catch (error) {
     console.error("OCR error:", error);
@@ -122,16 +117,6 @@ async function performOCRWithModel(file: File, apiKey: string): Promise<OCRResul
 
 export async function performOCR(file: File, customToast?: Function): Promise<OCRResult | null> {
   try {
-    const apiKey = localStorage.getItem("openai_api_key");
-    if (!apiKey) {
-      toast({
-        title: "API Key Missing",
-        description: "Please add your OpenAI API key in the settings first.",
-        variant: "destructive",
-      });
-      return null;
-    }
-
     // Check if file type is supported
     if (!['application/pdf', 'image/jpeg', 'image/png'].includes(file.type)) {
       toast({
@@ -159,8 +144,8 @@ export async function performOCR(file: File, customToast?: Function): Promise<OC
       description: "Extracting text from your document...",
     });
 
-    // Perform OCR with OpenAI
-    const result = await performOCRWithModel(file, apiKey);
+    // Perform OCR with Gemini
+    const result = await performOCRWithModel(file);
     if (!result || !result.text.trim()) {
       throw new Error("Failed to extract text from the document");
     }

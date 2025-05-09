@@ -5,24 +5,22 @@ import ChatWindow from '@/components/Chat/ChatWindow';
 import MessageInput from '@/components/Chat/MessageInput';
 import FileUpload from '@/components/Upload/FileUpload';
 import ReportHistory from '@/components/Card/ReportHistory';
-import ApiKeyModal from '@/components/Settings/ApiKeyModal';
 import { useNavigate } from 'react-router-dom';
-import { Settings, FileText, Calendar } from 'lucide-react';
+import { FileText, Calendar } from 'lucide-react';
 import { Message } from '@/components/Chat/ChatWindow';
 import { v4 as uuidv4 } from 'uuid';
 import { Report } from '@/components/Card/ReportHistory';
 import { toast } from '@/hooks/use-toast';
+import { useReportFile } from '@/ReportFileContext';
 
 const Index = () => {
   const navigate = useNavigate();
   const [userName, setUserName] = useState<string | null>(localStorage.getItem('user_name'));
   const [messages, setMessages] = useState<Message[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
-  const [apiKey, setApiKey] = useState<string | null>(localStorage.getItem('openai_api_key'));
-  const [selectedModel, setSelectedModel] = useState<string>(localStorage.getItem('openai_model') || 'gpt-4o');
   const [isTyping, setIsTyping] = useState(false);
-  const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false);
   const [uploadVisible, setUploadVisible] = useState(false);
+  const { setFile } = useReportFile();
 
   // Initial setup - show welcome message
   useEffect(() => {
@@ -124,65 +122,29 @@ const Index = () => {
         date: new Date().toLocaleDateString(),
         isActive: true
       };
-      
       // Deactivate any previously active reports
       const updatedReports = reports.map(report => ({
         ...report,
         isActive: false
       }));
-      
       // Add the new report to the list
       const allReports = [...updatedReports, newReport];
       setReports(allReports);
-      
-      // Save to localStorage
+      // Save to localStorage (just the report metadata, not the file)
       localStorage.setItem('blood_reports', JSON.stringify(allReports));
-      
-      // Convert file to base64 and store in localStorage
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        try {
-          const base64 = e.target?.result as string;
-          // Store the base64 string without the data URL prefix
-          const base64Data = base64.split(',')[1];
-          localStorage.setItem(`report_file_${newReport.id}`, base64Data);
-          
-          // Add a message about the upload
-          const uploadMessage: Message = {
-            id: uuidv4(),
-            sender: 'user',
-            message: `Uploaded: ${file.name}`,
-            timestamp: new Date(),
-            isNew: true
-          };
-          setMessages(prev => [...prev, uploadMessage]);
-          
-          // Check if API key is available
-          if (!apiKey) {
-            setApiKeyModalOpen(true);
-          } else {
-            // Navigate to results page
-            navigate(`/results?report=${newReport.id}`);
-          }
-        } catch (error) {
-          console.error('Error storing file:', error);
-          toast({
-            title: "Error",
-            description: "Failed to store the uploaded file. Please try again.",
-            variant: "destructive"
-          });
-        }
+      // Set the file in context instead of localStorage
+      setFile(file);
+      // Add a message about the upload
+      const uploadMessage: Message = {
+        id: uuidv4(),
+        sender: 'user',
+        message: `Uploaded: ${file.name}`,
+        timestamp: new Date(),
+        isNew: true
       };
-      
-      reader.onerror = () => {
-        toast({
-          title: "Error",
-          description: "Failed to read the uploaded file. Please try again.",
-          variant: "destructive"
-        });
-      };
-      
-      reader.readAsDataURL(file);
+      setMessages(prev => [...prev, uploadMessage]);
+      // Navigate to results page
+      navigate(`/results?report=${newReport.id}`);
     } catch (error) {
       console.error('Error handling file upload:', error);
       toast({
@@ -191,13 +153,6 @@ const Index = () => {
         variant: "destructive"
       });
     }
-  };
-
-  const handleSaveApiKey = (key: string, model: string) => {
-    setApiKey(key);
-    setSelectedModel(model);
-    localStorage.setItem('openai_api_key', key);
-    localStorage.setItem('openai_model', model);
   };
 
   const handleSelectReport = (report: Report) => {
@@ -233,14 +188,6 @@ const Index = () => {
       <header className="border-b border-gray-200 p-4 bg-white shadow-sm">
         <div className="container flex justify-between items-center">
           <AvaLogo />
-          <Button 
-            variant="ghost" 
-            size="icon"
-            onClick={() => setApiKeyModalOpen(true)}
-            className="text-gray-600 hover:text-gray-800 hover:bg-gray-100"
-          >
-            <Settings className="h-5 w-5" />
-          </Button>
         </div>
       </header>
       
@@ -248,100 +195,31 @@ const Index = () => {
       <main className="flex-1 container py-6">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Chat Column */}
-          <div className="lg:col-span-2 flex flex-col">
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 flex flex-col h-[600px]">
-              {/* Chat Header */}
-              <div className="p-4 border-b border-gray-200">
-                <h2 className="text-xl font-semibold">Chat with <span className="text-ava-neon-green">Ava AI</span> <span className="text-sm text-gray-500">(Blood Analysis Expert)</span></h2>
-                <p className="text-sm text-gray-500">Your personal blood report analyzer</p>
-              </div>
-              
-              {/* Chat Window */}
-              <div className="flex-1 overflow-hidden">
-                <ChatWindow 
-                  messages={messages} 
-                  isTyping={isTyping}
-                  whoIsTyping="ava"
-                  animateTyping={true}
-                />
-              </div>
-              
-              {/* Upload Area (conditionally shown) */}
+          <div className="lg:col-span-2">
+            <div className="bg-white rounded-lg shadow-sm p-4 h-[600px] flex flex-col">
+              <ChatWindow messages={messages} isTyping={isTyping} />
+              <MessageInput onSendMessage={handleSendMessage} />
               {uploadVisible && (
-                <div className="px-4 pb-4">
+                <div className="mt-4">
                   <FileUpload onFileSelected={handleFileSelected} />
                 </div>
               )}
-              
-              {/* Message Input */}
-              <div className="p-4 border-t border-gray-200">
-                <MessageInput 
-                  onSendMessage={handleSendMessage}
-                  placeholder={userName ? "Type your message..." : "Enter your name..."}
-                />
-              </div>
             </div>
           </div>
           
-          {/* Sidebar Column */}
-          <div className="lg:col-span-1">
-            {/* Report History */}
-            <ReportHistory 
-              reports={reports}
-              onSelectReport={handleSelectReport}
-              onDeleteReport={handleDeleteReport}
-            />
-            
-            {/* Information Card */}
-            <div className="mt-6 bg-white border border-gray-200 rounded-lg p-5 shadow-sm">
-              <h3 className="flex items-center gap-2 text-lg font-medium mb-3">
-                <FileText className="h-5 w-5 text-ava-neon-green" />
-                How It Works
-              </h3>
-              <ol className="space-y-3 text-sm text-gray-700">
-                <li className="flex gap-2">
-                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-ava-muted flex items-center justify-center text-ava-neon-green text-xs font-medium">1</span>
-                  <span>Upload your blood test report (PDF or image)</span>
-                </li>
-                <li className="flex gap-2">
-                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-ava-muted flex items-center justify-center text-ava-neon-green text-xs font-medium">2</span>
-                  <span>Ava AI will analyze the results using advanced AI</span>
-                </li>
-                <li className="flex gap-2">
-                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-ava-muted flex items-center justify-center text-ava-neon-green text-xs font-medium">3</span>
-                  <span>Get personalized insights about your health</span>
-                </li>
-                <li className="flex gap-2">
-                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-ava-muted flex items-center justify-center text-ava-neon-green text-xs font-medium">4</span>
-                  <span>Receive recommendations to improve your results</span>
-                </li>
-              </ol>
-            </div>
-            
-            {/* Schedule Card */}
-            <div className="mt-6 bg-white border border-gray-200 rounded-lg p-5 shadow-sm">
-              <h3 className="flex items-center gap-2 text-lg font-medium mb-3">
-                <Calendar className="h-5 w-5 text-ava-neon-green" />
-                Your Schedule
-              </h3>
-              <p className="text-gray-600 text-sm mb-3">Stay on track with your health monitoring schedule</p>
-              <div className="bg-ava-neon-green/10 rounded-lg p-3">
-                <p className="text-sm font-medium">Next Blood Test</p>
-                <p className="text-sm text-gray-600">Recommended: 3 months from your last test</p>
-              </div>
+          {/* Reports Column */}
+          <div className="space-y-6">
+            <div className="bg-white rounded-lg shadow-sm p-4">
+              <h2 className="text-lg font-semibold mb-4">Report History</h2>
+              <ReportHistory 
+                reports={reports}
+                onSelectReport={handleSelectReport}
+                onDeleteReport={handleDeleteReport}
+              />
             </div>
           </div>
         </div>
       </main>
-      
-      {/* API Key Modal */}
-      <ApiKeyModal
-        open={apiKeyModalOpen}
-        onOpenChange={setApiKeyModalOpen}
-        onSaveApiKey={handleSaveApiKey}
-        apiKey={apiKey || ''}
-        selectedModel={selectedModel}
-      />
     </div>
   );
 };

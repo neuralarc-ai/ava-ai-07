@@ -5,7 +5,7 @@ export interface HealthMetric {
   name: string;
   value: number | string;
   unit: string;
-  status: "normal" | "warning" | "danger";
+  status: "normal" | "warning" | "danger" | "high_risk" | "medium_risk" | "low_risk";
   range: string;
   history: Array<{
     date: string;
@@ -13,6 +13,9 @@ export interface HealthMetric {
   }>;
   description?: string;
   category?: string;
+  visualIndicator?: "H" | "L" | "M" | "↑" | "↓" | "normal";
+  riskLevel?: "high" | "medium" | "low" | "normal";
+  trend?: "increasing" | "decreasing" | "stable";
 }
 
 export interface PatientInfo {
@@ -35,6 +38,12 @@ export interface AnalysisResult {
   modelUsed?: string;
   categories?: string[];
   patientInfo?: PatientInfo;
+  riskSummary?: {
+    highRisk: string[];
+    mediumRisk: string[];
+    lowRisk: string[];
+    normal: string[];
+  };
 }
 
 // Function to normalize strings to make comparing metrics easier
@@ -147,30 +156,47 @@ function mergePatientInfo(allPatientInfos: PatientInfo[]): PatientInfo {
   return merged;
 }
 
-async function analyzeWithModel(ocrText: string, apiKey: string): Promise<AnalysisResult | null> {
+async function analyzeWithModel(text: string): Promise<AnalysisResult> {
   try {
-    // Make the API call to OpenAI
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error('Gemini API key not found in environment variables');
+    }
+
+    const response = await fetch("https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`
+        "x-goog-api-key": apiKey
       },
       body: JSON.stringify({
-        model: "gpt-4-turbo-preview",
-        messages: [
-          {
-            role: "system", 
-            content: `You are a medical assistant specializing in analyzing health reports and lab results. Extract ALL relevant information in detail:
+        contents: [{
+          parts: [{
+            text: `You are a medical assistant specializing in analyzing health reports and lab results. Extract ALL relevant information in detail:
 
 1. Patient Information: Extract any patient details (name, ID, gender, date of birth, collection date).
 2. Health Metrics: For EVERY single parameter mentioned in the report:
    - Extract the exact parameter name AS SHOWN in the report (maintain original terminology)
    - Extract the value and unit exactly as shown
    - Extract the reference range exactly as shown
-   - Determine status: 'normal' if within range, 'warning' if slightly outside, 'danger' if significantly outside
+   - Identify any visual indicators (H, L, M, ↑, ↓) or color coding
+   - Determine risk level based on:
+     * HIGH RISK: Significantly outside range (>50% deviation) or marked with H/↑
+     * MEDIUM RISK: Moderately outside range (20-50% deviation) or marked with M
+     * LOW RISK: Slightly outside range (<20% deviation) or marked with L/↓
+     * NORMAL: Within reference range
    - Provide a detailed description of what each parameter measures
-   - Categorize each parameter (e.g., "Electrolytes", "Lipids", "Liver Function", etc.)
+   - Categorize each parameter into one of these categories:
+     * "Complete Blood Count (CBC)"
+     * "Lipid Profile"
+     * "Liver Function"
+     * "Kidney Function"
+     * "Electrolytes"
+     * "Thyroid Function"
+     * "Diabetes Markers"
+     * "Inflammatory Markers"
+     * "Cardiac Markers"
+     * "Other"
 
 Format your response as valid JSON with the structure:
 {
@@ -190,141 +216,169 @@ Format your response as valid JSON with the structure:
       "name": string,
       "value": number or string,
       "unit": string,
-      "status": "normal"|"warning"|"danger",
+      "status": "normal"|"warning"|"danger"|"high_risk"|"medium_risk"|"low_risk",
       "range": string,
       "description": string,
-      "category": string
+      "category": string,
+      "visualIndicator": "H"|"L"|"M"|"↑"|"↓"|"normal",
+      "riskLevel": "high"|"medium"|"low"|"normal",
+      "trend": "increasing"|"decreasing"|"stable"
     }
   ],
   "recommendations": [string],
   "summary": string,
   "detailedAnalysis": string,
-  "categories": [string]
+  "categories": [string],
+  "riskSummary": {
+    "highRisk": [string],
+    "mediumRisk": [string],
+    "lowRisk": [string],
+    "normal": [string]
+  }
 }
 
-The detailedAnalysis should provide a comprehensive assessment of overall health based on the test results. Extract EVERY parameter mentioned, even rare ones, using EXACTLY the same terminology used in the report. DO NOT skip any parameters.`
+The detailedAnalysis should provide a comprehensive assessment of overall health based on the test results. Extract EVERY parameter mentioned, even rare ones, using EXACTLY the same terminology used in the report. DO NOT skip any parameters.
+
+Analyze this health report/lab result: ${text}`
+          }]
+        }],
+        generationConfig: {
+          temperature: 0.1,
+          topK: 32,
+          topP: 0.95,
+          maxOutputTokens: 8192,
+        },
+        safetySettings: [
+          {
+            category: "HARM_CATEGORY_HARASSMENT",
+            threshold: "BLOCK_MEDIUM_AND_ABOVE"
           },
           {
-            role: "user", 
-            content: `Analyze this health report/lab result. Extract ALL metrics mentioned, patient details, and reference ranges: ${ocrText}`
+            category: "HARM_CATEGORY_HATE_SPEECH",
+            threshold: "BLOCK_MEDIUM_AND_ABOVE"
+          },
+          {
+            category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+            threshold: "BLOCK_MEDIUM_AND_ABOVE"
+          },
+          {
+            category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+            threshold: "BLOCK_MEDIUM_AND_ABOVE"
           }
-        ],
-        response_format: { type: "json_object" },
-        max_tokens: 4000
+        ]
       })
     });
 
     if (!response.ok) {
       const errorData = await response.json();
-      console.error("OpenAI API error:", errorData);
-      throw new Error(`OpenAI API error: ${response.status} - ${errorData.error?.message || 'Unknown error'}`);
+      console.error("Gemini API error:", errorData);
+      throw new Error(`Gemini API error: ${response.status} - ${errorData.error?.message || 'Unknown error'}`);
     }
 
     const data = await response.json();
+    const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
     
-    // Extract the content from the response
-    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
-      console.error("Invalid API response structure:", data);
-      return null;
+    if (!content) {
+      throw new Error('No content received from Gemini API');
     }
-    
-    const contentText = data.choices[0].message.content;
-    console.log("Raw content response:", contentText);
-    
-    // Try to parse the JSON response, handling different response formats
-    let analysisContent;
+
     try {
-      // If the content is already an object, use it directly
-      if (typeof contentText === 'object') {
-        analysisContent = contentText;
-      } else if (typeof contentText === 'string') {
-        // Try to extract JSON if it's wrapped in markdown code blocks or text
-        const jsonMatch = contentText.match(/```(?:json)?([\s\S]*?)```/) || 
-                          contentText.match(/({[\s\S]*})/) ||
-                          [null, contentText];
-        
-        const jsonText = jsonMatch[1]?.trim() || contentText;
-        analysisContent = JSON.parse(jsonText);
+      // Robustly extract JSON from the response
+      let jsonText = content;
+      const jsonMatch = content.match(/```(?:json)?([\s\S]*?)```/) ||
+                        content.match(/({[\s\S]*})/) ||
+                        [null, content];
+      jsonText = jsonMatch[1]?.trim() || content;
+      // Remove trailing commas before } or ]
+      jsonText = jsonText.replace(/,\s*([}\]])/g, '$1');
+      // Try to parse
+      const result = JSON.parse(jsonText);
+
+      // Validate the result structure
+      if (!result.metrics || !Array.isArray(result.metrics)) {
+        throw new Error('Invalid response structure: metrics array is missing');
       }
-      
-      if (!analysisContent || !analysisContent.metrics) {
-        // If we couldn't parse proper JSON or the metrics are missing, create a basic structure
-        analysisContent = {
-          metrics: [],
-          patientInfo: {},
-          recommendations: ["Unable to extract specific metrics from this report format. Please consult your healthcare provider for interpretation."],
-          summary: "The analysis could not extract structured metrics from this report format.",
-          detailedAnalysis: "The report format could not be properly parsed into structured metrics. The OCR text has been preserved for reference."
+
+      // Ensure all required fields are present and properly formatted
+      result.metrics = result.metrics.map((metric: any) => {
+        // Convert numeric values to numbers where possible
+        let value = metric.value;
+        if (typeof value === 'string') {
+          const numValue = parseFloat(value);
+          if (!isNaN(numValue)) {
+            value = numValue;
+          }
+        }
+
+        // Determine risk level based on status and visual indicators
+        let riskLevel = metric.riskLevel || 'normal';
+        if (metric.status === 'high_risk' || metric.visualIndicator === 'H' || metric.visualIndicator === '↑') {
+          riskLevel = 'high';
+        } else if (metric.status === 'medium_risk' || metric.visualIndicator === 'M') {
+          riskLevel = 'medium';
+        } else if (metric.status === 'low_risk' || metric.visualIndicator === 'L' || metric.visualIndicator === '↓') {
+          riskLevel = 'low';
+        }
+
+        return {
+          name: metric.name || 'Unknown',
+          value: value,
+          unit: metric.unit || '',
+          status: metric.status || 'normal',
+          range: metric.range || '',
+          description: metric.description || '',
+          category: metric.category || 'Other',
+          visualIndicator: metric.visualIndicator || 'normal',
+          riskLevel: riskLevel,
+          trend: metric.trend || 'stable'
+        };
+      });
+
+      // Ensure risk summary is present
+      if (!result.riskSummary) {
+        result.riskSummary = {
+          highRisk: [],
+          mediumRisk: [],
+          lowRisk: [],
+          normal: []
         };
       }
-      
-      console.log("Parsed analysis result:", analysisContent);
-    } catch (error) {
-      console.error("Error parsing model response:", error);
-      console.log("Failed content:", contentText);
-      // Return a basic structure if parsing fails
-      return {
-        metrics: [],
-        patientInfo: {},
-        recommendations: ["Unable to analyze the report format. Please consult your healthcare provider for interpretation."],
-        summary: "The analysis encountered an error when processing this report.",
-        detailedAnalysis: "There was an error processing the report content. The OCR text has been preserved for reference.",
-        modelUsed: "gpt-4-turbo-preview"
-      };
+
+      // Categorize metrics by risk level
+      result.metrics.forEach((metric: HealthMetric) => {
+        const metricName = `${metric.name} (${metric.value} ${metric.unit})`;
+        switch (metric.riskLevel) {
+          case 'high':
+            result.riskSummary.highRisk.push(metricName);
+            break;
+          case 'medium':
+            result.riskSummary.mediumRisk.push(metricName);
+            break;
+          case 'low':
+            result.riskSummary.lowRisk.push(metricName);
+            break;
+          default:
+            result.riskSummary.normal.push(metricName);
+        }
+      });
+
+      return result;
+    } catch (parseError) {
+      console.error('Error parsing Gemini response:', parseError);
+      throw new Error('Failed to parse Gemini API response');
     }
-    
-    // Add empty history arrays to each metric and ensure values are properly formatted
-    const metricsWithHistory = (analysisContent.metrics || []).map((metric: any) => {
-      // Ensure the value is a number when possible, or keep as string if not
-      let value = metric.value;
-      if (typeof value === 'string' && !isNaN(parseFloat(value)) && !value.includes('/')) {
-        value = parseFloat(value);
-      }
-      
-      return {
-        name: String(metric.name || "Unnamed Parameter"),
-        value: value,
-        unit: String(metric.unit || ""),
-        status: metric.status || "normal",
-        range: String(metric.range || "Not specified"),
-        history: [],
-        description: String(metric.description || ""),
-        category: String(metric.category || "Other")
-      };
-    });
-    
-    return {
-      metrics: metricsWithHistory,
-      recommendations: analysisContent.recommendations || [],
-      summary: analysisContent.summary || "",
-      detailedAnalysis: analysisContent.detailedAnalysis || "",
-      categories: analysisContent.categories || [],
-      patientInfo: analysisContent.patientInfo || {},
-      modelUsed: "gpt-4-turbo-preview"
-    };
   } catch (error) {
-    console.error("Error analyzing with model:", error);
-    return null;
+    console.error("Error analyzing with Gemini:", error);
+    throw error;
   }
 }
 
 export async function analyzeHealthReport(ocrText: string): Promise<AnalysisResult | null> {
   try {
-    const apiKey = localStorage.getItem("openai_api_key");
+    console.log("Starting health report analysis with Gemini");
     
-    if (!apiKey) {
-      toast({
-        title: "API Key Missing",
-        description: "Please add your OpenAI API key in the settings first.",
-        variant: "destructive",
-      });
-      return null;
-    }
-
-    console.log("Starting health report analysis with OpenAI GPT-4");
-    
-    // Analyze with OpenAI
-    const result = await analyzeWithModel(ocrText, apiKey);
+    // Analyze with Gemini
+    const result = await analyzeWithModel(ocrText);
     if (!result || result.metrics.length === 0) {
       throw new Error("Failed to analyze the health report");
     }
