@@ -1,10 +1,9 @@
-
 import React, { useState, useEffect } from 'react';
 import Avatar from '../Avatar';
 import { TypeAnimation } from 'react-type-animation';
 
 interface ChatMessageProps {
-  sender: 'ava' | 'sam' | 'user';
+  sender: 'ava' | 'sam' | 'user' | 'lab_expert';
   message: string;
   animateTyping?: boolean;
   typingSpeed?: number;
@@ -30,11 +29,13 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
   // Display name and role based on sender
   const senderName = 
     sender === 'user' ? 'You' : 
-    sender === 'ava' ? 'Ava AI' : 'Sam';
+    sender === 'ava' ? 'Ava AI' : 
+    sender === 'lab_expert' ? 'Lab Expert' : 'Sam';
     
   const senderRole =
     sender === 'user' ? '' :
-    sender === 'ava' ? '(Blood Analysis Expert)' : '(Lab Assistant)';
+    sender === 'ava' ? '(Blood Analysis Expert)' :
+    sender === 'lab_expert' ? '(Lab Expert)' : '(Lab Assistant)';
   
   useEffect(() => {
     if (animateTyping && isNew) {

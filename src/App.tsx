@@ -1,31 +1,33 @@
-import { Toaster } from "@/components/ui/toaster";
-import { Toaster as Sonner } from "@/components/ui/sonner";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import Index from "./pages/Index";
-import Results from "./pages/Results";
-import NotFound from "./pages/NotFound";
-import { ReportFileProvider } from './ReportFileContext';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { Toaster } from '@/components/ui/toaster';
+import { ReportFileProvider } from '@/ReportFileContext';
 
-const queryClient = new QueryClient();
+// Pages
+import Index from '@/pages/Index';
+import Results from '@/pages/Results';
+import Reports from '@/pages/Reports';
+import Profile from '@/pages/Profile';
+import Settings from '@/pages/Settings';
+import Chat from '@/pages/Chat';
+import NotFound from '@/pages/NotFound';
 
-const App = () => (
-  <ReportFileProvider>
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
+function App() {
+  return (
+    <ReportFileProvider>
+      <Router>
+        <Routes>
+          <Route path="/" element={<Index />} />
+          <Route path="/results" element={<Results />} />
+          <Route path="/reports" element={<Reports />} />
+          <Route path="/profile" element={<Profile />} />
+          <Route path="/settings" element={<Settings />} />
+          <Route path="/chat" element={<Chat />} />
+          <Route path="*" element={<NotFound />} />
+        </Routes>
         <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <Routes>
-            <Route path="/" element={<Index />} />
-            <Route path="/results" element={<Results />} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </BrowserRouter>
-      </TooltipProvider>
-    </QueryClientProvider>
-  </ReportFileProvider>
-);
+      </Router>
+    </ReportFileProvider>
+  );
+}
 
 export default App;

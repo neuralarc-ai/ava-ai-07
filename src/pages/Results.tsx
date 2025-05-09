@@ -2,46 +2,50 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import AvaLogo from '@/components/AvaLogo';
-import ChatWindow from '@/components/Chat/ChatWindow';
-import MessageInput from '@/components/Chat/MessageInput';
-import ProgressBar, { AnalysisStage } from '@/components/ProgressBar';
-import AnalysisCard, { AnalysisItem } from '@/components/Card/AnalysisCard';
-import { Settings, ArrowLeft, FileText } from 'lucide-react';
-import { Message } from '@/components/Chat/ChatWindow';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+import { Layout } from '@/components/layout/Layout';
+import { HealthMetricCard } from '@/components/Card/HealthMetricCard';
+import { DetailedMetricsTable } from '@/components/reports/DetailedMetricsTable';
+import { ChartContainer } from '@/components/ui/chart';
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Download, FileText, User, CalendarIcon, Building, Shield, AlertCircle, Activity, AlertTriangle, FileHeart } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
-import { processPDF, BloodTestResult } from '@/services/pdfService';
 import { useReportFile } from '@/ReportFileContext';
+import { performOCR } from '@/services/ocrService';
+import { analyzeHealthReport } from '@/services/healthAnalysisService';
+import type { HealthMetric } from '@/services/healthAnalysisService';
+
+interface PatientInfo {
+  name?: string;
+  age?: string;
+  gender?: string;
+  dateOfBirth?: string;
+  patientId?: string;
+  collectionDate?: string;
+  reportDate?: string;
+  doctorName?: string;
+  hospitalName?: string;
+}
 
 const Results = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const [stage, setStage] = useState<AnalysisStage>('reading');
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [userName, setUserName] = useState('there');
-  const [currentTab, setCurrentTab] = useState('high');
-  const [userMessage, setUserMessage] = useState('');
-  const [analysisResults, setAnalysisResults] = useState<BloodTestResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [retryCount, setRetryCount] = useState(0);
-  const maxRetries = 3;
+  const [currentTab, setCurrentTab] = useState('all-parameters');
   const { file } = useReportFile();
   
-  // Get report data from URL
-  const reportId = new URLSearchParams(location.search).get('report');
-  
-  // Add a message to the chat
-  const addMessage = (sender: 'user' | 'ava', message: string) => {
-    const newMessage: Message = {
-      id: uuidv4(),
-      sender,
-      message,
-      timestamp: new Date(),
-      isNew: true
-    };
-    setMessages(prev => [...prev, newMessage]);
-  };
+  // Dashboard state
+  const [metrics, setMetrics] = useState<HealthMetric[]>([]);
+  const [highRiskMetrics, setHighRiskMetrics] = useState<HealthMetric[]>([]);
+  const [mediumRiskMetrics, setMediumRiskMetrics] = useState<HealthMetric[]>([]);
+  const [normalMetrics, setNormalMetrics] = useState<HealthMetric[]>([]);
+  const [patientInfo, setPatientInfo] = useState<PatientInfo | undefined>();
+  const [summary, setSummary] = useState<string | undefined>();
+  const [detailedAnalysis, setDetailedAnalysis] = useState<string | undefined>();
+  const [recommendations, setRecommendations] = useState<string[]>([]);
+  const [reportTitle, setReportTitle] = useState<string>("Health Report");
 
   // Process the PDF and analyze results
   useEffect(() => {
@@ -49,305 +53,432 @@ const Results = () => {
       try {
         setLoading(true);
         setError(null);
-        // Get the report file from context
         if (!file) {
           throw new Error('No report file found. Please upload your report again.');
         }
-        // Get the report metadata from localStorage
-        const reports = JSON.parse(localStorage.getItem('blood_reports') || '[]');
-        const currentReport = reports.find((r: any) => r.id === reportId);
-        if (!currentReport) {
-          throw new Error('Report not found');
+
+        // Get the OCR result and analyze it
+        const ocrResult = await performOCR(file);
+        if (!ocrResult || !ocrResult.text) {
+          throw new Error('Failed to extract text from the PDF');
         }
-        // Start the conversation
-        addMessage('ava', `Hello ${userName}! I'm analyzing your blood report now. This might take a few moments.`);
-        addMessage('ava', `I see you've uploaded "${currentReport.name}". Let me take a look at it.`);
-        addMessage('ava', "I'm extracting all the parameters and values from your report. I'll categorize them by risk level and provide detailed explanations.");
-        // Process the PDF
-        const results = await processPDF(file);
-        setAnalysisResults(results);
-        
-        // Update the analysis stage
-        setStage('complete');
-        
-        // Add completion message with a summary
-        const highRiskCount = results.filter(r => r.riskLevel === 'high').length;
-        const mediumRiskCount = results.filter(r => r.riskLevel === 'medium').length;
-        const lowRiskCount = results.filter(r => r.riskLevel === 'low').length;
-        const normalCount = results.filter(r => r.riskLevel === 'normal').length;
-        
-        addMessage('ava', `I've completed analyzing your report! Here's a quick summary:`);
-        addMessage('ava', `• High Risk Parameters: ${highRiskCount}
-• Medium Risk Parameters: ${mediumRiskCount}
-• Low Risk Parameters: ${lowRiskCount}
-• Normal Parameters: ${normalCount}`);
-        
-        addMessage('ava', "You can find detailed results below, categorized by risk level. Feel free to ask me any questions about specific parameters or your overall health status.");
-        
+
+        // Analyze the health report
+        const analysisResult = await analyzeHealthReport(ocrResult.text);
+        if (!analysisResult) {
+          throw new Error('Failed to analyze the health report');
+        }
+
+        // Set patient information
+        if (analysisResult.patientInfo) {
+          setPatientInfo(analysisResult.patientInfo);
+          setReportTitle(
+            analysisResult.patientInfo.name 
+              ? `${analysisResult.patientInfo.name}'s Health Report`
+              : "Health Report"
+          );
+        }
+
+        // Set summary and analysis
+        setSummary(analysisResult.summary);
+        setDetailedAnalysis(analysisResult.detailedAnalysis);
+        setRecommendations(analysisResult.recommendations || []);
+
+        // Process metrics
+        const allMetrics = analysisResult.metrics.map(metric => ({
+          ...metric,
+          value: typeof metric.value === 'object' ? JSON.stringify(metric.value) : metric.value,
+          history: (metric.history || []).map(h => ({
+            ...h,
+            value: typeof h.value === 'object' ? JSON.stringify(h.value) : h.value
+          }))
+        })) as HealthMetric[];
+
+        setMetrics(allMetrics);
+
+        // Set metrics by risk level
+        setHighRiskMetrics(allMetrics.filter(m => m.status === 'danger' || m.status === 'high_risk'));
+        setMediumRiskMetrics(allMetrics.filter(m => m.status === 'warning' || m.status === 'medium_risk'));
+        setNormalMetrics(allMetrics.filter(m => m.status === 'normal' || m.status === 'low_risk'));
+
       } catch (err) {
         console.error('Error processing report:', err);
         const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-        
-        // Check if it's a worker initialization error
-        if (errorMessage.includes('Failed to initialize PDF.js worker')) {
-          if (retryCount < maxRetries) {
-            setRetryCount(prev => prev + 1);
-            addMessage('ava', "I'm having a bit of trouble processing your report. Let me try again...");
-            // Wait for 2 seconds before retrying
-            setTimeout(() => {
-              processReport();
-            }, 2000);
-            return;
-          }
-          setError('Unable to initialize PDF processing. Please refresh the page and try again.');
-          addMessage('ava', "I apologize, but I'm having trouble processing your report. Please try refreshing the page.");
-        } else {
-          setError(`Failed to process report: ${errorMessage}`);
-          addMessage('ava', "I apologize, but I encountered an error while analyzing your report. Please try again.");
-        }
+        setError(`Failed to process report: ${errorMessage}`);
       } finally {
         setLoading(false);
       }
     };
     
-    // Try to get username from localStorage
-    const storedName = localStorage.getItem('user_name');
-    if (storedName) {
-      setUserName(storedName);
-    }
-    
-    // Start processing the report
     processReport();
-  }, [reportId, userName, retryCount, file]);
+  }, [file]);
 
-  // Handle user sending a message
-  const handleSendMessage = (message: string) => {
-    // Add user message to chat
-    addMessage('user', message);
-    setUserMessage('');
-    
-    // Generate response based on the analysis results
-    setTimeout(() => {
-      let responseMessage = '';
-      
-      // Check if the message mentions any specific parameter
-      const mentionedParameter = analysisResults.find(result => 
-        message.toLowerCase().includes(result.parameter.toLowerCase())
-      );
-      
-      if (mentionedParameter) {
-        responseMessage = `${mentionedParameter.description} ${mentionedParameter.recommendation}`;
-        if (mentionedParameter.criticalAction) {
-          responseMessage += ` ${mentionedParameter.criticalAction}`;
-        }
-      } else if (message.toLowerCase().includes('summary') || message.toLowerCase().includes('overall')) {
-        const highRiskCount = analysisResults.filter(r => r.riskLevel === 'high').length;
-        const mediumRiskCount = analysisResults.filter(r => r.riskLevel === 'medium').length;
-        const lowRiskCount = analysisResults.filter(r => r.riskLevel === 'low').length;
-        const normalCount = analysisResults.filter(r => r.riskLevel === 'normal').length;
-        
-        responseMessage = `Here's a summary of your results:
-• High Risk Parameters: ${highRiskCount}
-• Medium Risk Parameters: ${mediumRiskCount}
-• Low Risk Parameters: ${lowRiskCount}
-• Normal Parameters: ${normalCount}
-
-${highRiskCount > 0 ? '⚠️ You have some parameters that need immediate attention. Please consult your healthcare provider.' : 
-  mediumRiskCount > 0 ? '📋 You have some parameters that should be monitored. Consider discussing these with your healthcare provider.' :
-  '✅ Your results are generally within normal ranges.'}`;
-      } else {
-        responseMessage = "I'm happy to answer any specific questions you have about your blood test results. You can ask about particular parameters, or I can provide an overall summary of your results.";
-      }
-      
-      // Add AI response to chat
-      addMessage('ava', responseMessage);
-    }, 1500);
+  const handleExportPDF = () => {
+    // This would be implemented with a PDF generation library
+    alert("PDF export functionality will be implemented in a future update");
   };
 
-  // Filter analysis items by risk level
-  const highRiskItems = analysisResults.filter(item => item.riskLevel === 'high');
-  const mediumRiskItems = analysisResults.filter(item => item.riskLevel === 'medium');
-  const lowRiskItems = analysisResults.filter(item => item.riskLevel === 'low');
-  const normalItems = analysisResults.filter(item => item.riskLevel === 'normal');
-
-  const handleBack = () => {
-    navigate('/');
-  };
-
-  if (error) {
+  if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="text-red-500 text-xl mb-4">Error</div>
-          <p className="text-gray-600">{error}</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-          >
-            Refresh Page
-          </button>
+      <Layout>
+        <div className="container mx-auto px-4 py-6 flex justify-center items-center min-h-[50vh]">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
         </div>
-      </div>
+      </Layout>
     );
   }
 
-  return (
-    <div className="flex flex-col min-h-screen bg-gray-50 text-gray-800">
-      {/* Header */}
-      <header className="border-b border-gray-200 p-4 bg-white shadow-sm">
-        <div className="container flex justify-between items-center">
-          <div className="flex items-center gap-4">
-            <Button 
-              variant="ghost" 
-              size="icon"
-              onClick={handleBack}
-              className="text-gray-600 hover:text-gray-800 hover:bg-gray-100"
+  if (error) {
+    return (
+      <Layout>
+        <div className="container mx-auto px-4 py-6">
+          <div className="text-center">
+            <div className="text-red-500 text-xl mb-4">Error</div>
+            <p className="text-gray-600">{error}</p>
+            <Button
+              onClick={() => window.location.reload()}
+              className="mt-4"
             >
-              <ArrowLeft className="h-5 w-5" />
+              Refresh Page
             </Button>
-            <AvaLogo />
           </div>
         </div>
-      </header>
-      
-      {/* Main Content */}
-      <main className="flex-1 container py-6">
-        {/* Progress Tracker */}
-        <div className="mb-6">
-          <ProgressBar stage={stage} />
-        </div>
-        
-        {/* Chat Window */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-8">
-          <div className="p-4 border-b border-gray-200">
-            <h2 className="text-xl font-semibold">Analysis in Progress</h2>
-            <p className="text-sm text-gray-500">
-              Ava AI <span className="text-xs">(Blood Analysis Expert)</span> is analyzing your blood report
+      </Layout>
+    );
+  }
+
+  // Define chart config for the ChartContainer
+  const chartConfig = {
+    default: { color: "hsl(var(--primary))" },
+    normal: { color: "hsl(var(--health-normal))" },
+    warning: { color: "hsl(var(--health-warning))" },
+    danger: { color: "hsl(var(--health-danger))" }
+  };
+
+  return (
+    <Layout>
+      <div className="container mx-auto px-4 py-6">
+        <div className="flex flex-col md:flex-row justify-between items-center mb-8">
+          <div>
+            <h1 className="text-3xl font-bold">{reportTitle}</h1>
+            <p className="text-muted-foreground mt-1">
+              Report Date: {patientInfo?.collectionDate ? new Date(patientInfo.collectionDate).toLocaleDateString() : 'Not specified'}
             </p>
           </div>
-          
-          <div className="h-[300px] overflow-y-auto">
-            <ChatWindow 
-              messages={messages}
-              isTyping={stage !== 'complete'}
-              whoIsTyping={stage !== 'complete' ? 'ava' : undefined}
-            />
-          </div>
-          
-          <div className="p-4 border-t border-gray-200">
-            <MessageInput 
-              onSendMessage={handleSendMessage} 
-              placeholder={stage === 'complete' ? "Ask about your results..." : "Please wait while I analyze your report..."}
-              disabled={stage !== 'complete'}
-            />
-          </div>
+          <Button 
+            className="mt-4 md:mt-0" 
+            variant="outline"
+            onClick={handleExportPDF}
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Export PDF
+          </Button>
         </div>
-        
-        {/* Results Section - Only shown when analysis is complete */}
-        {stage === 'complete' && (
-          <div className="animate-fade-in">
-            <div className="mb-6">
-              <h2 className="text-2xl font-bold mb-2">Your Analysis Results</h2>
-              <p className="text-gray-500">
-                We've analyzed your blood report and categorized findings by risk level
-              </p>
-            </div>
-            
-            <Tabs defaultValue="high" value={currentTab} onValueChange={setCurrentTab}>
-              <TabsList className="mb-6 bg-gray-100">
-                <TabsTrigger value="high" className="data-[state=active]:bg-red-100 data-[state=active]:text-red-800">
-                  High Risk ({highRiskItems.length})
-                </TabsTrigger>
-                <TabsTrigger value="medium" className="data-[state=active]:bg-orange-100 data-[state=active]:text-orange-800">
-                  Medium Risk ({mediumRiskItems.length})
-                </TabsTrigger>
-                <TabsTrigger value="low" className="data-[state=active]:bg-yellow-100 data-[state=active]:text-yellow-800">
-                  Low Risk ({lowRiskItems.length})
-                </TabsTrigger>
-                <TabsTrigger value="normal" className="data-[state=active]:bg-green-100 data-[state=active]:text-green-800">
-                  Normal ({normalItems.length})
-                </TabsTrigger>
-                <TabsTrigger value="all" className="data-[state=active]:bg-blue-100 data-[state=active]:text-blue-800">
-                  All Parameters
-                </TabsTrigger>
-              </TabsList>
-              
-              <TabsContent value="high" className="animate-fade-in">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {highRiskItems.map((item, index) => (
-                    <AnalysisCard key={`high-${index}`} item={item} />
-                  ))}
-                  {highRiskItems.length === 0 && (
-                    <div className="col-span-full text-center py-10 text-gray-500">
-                      No high risk parameters found
+
+        {/* Patient Information Card */}
+        {patientInfo && Object.values(patientInfo).some(val => val) && (
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle className="flex items-center">
+                <User className="mr-2 h-5 w-5" />
+                Patient Information
+              </CardTitle>
+              <CardDescription>{reportTitle}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {patientInfo.name && (
+                  <div className="flex items-center gap-2">
+                    <User className="h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-medium">Patient Name</p>
+                      <p className="text-sm text-muted-foreground">{patientInfo.name}</p>
                     </div>
-                  )}
-                </div>
-                
-                {highRiskItems.length > 0 && (
-                  <div className="mt-6 p-5 bg-red-50 border border-red-200 rounded-lg">
-                    <h3 className="font-semibold text-red-800 flex items-center gap-2 mb-2">
-                      <FileText className="h-5 w-5" />
-                      Critical Summary
-                    </h3>
-                    <p className="text-red-700">
-                      Your high-risk parameters require immediate attention. Please consider scheduling a follow-up appointment with your healthcare provider within the next 2 weeks to discuss these results and potential treatment options.
-                    </p>
                   </div>
                 )}
-              </TabsContent>
-              
-              <TabsContent value="medium" className="animate-fade-in">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {mediumRiskItems.map((item, index) => (
-                    <AnalysisCard key={`medium-${index}`} item={item} />
-                  ))}
-                  {mediumRiskItems.length === 0 && (
-                    <div className="col-span-full text-center py-10 text-gray-500">
-                      No medium risk parameters found
+                
+                {patientInfo.patientId && (
+                  <div className="flex items-center gap-2">
+                    <FileHeart className="h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-medium">Patient ID</p>
+                      <p className="text-sm text-muted-foreground">{patientInfo.patientId}</p>
                     </div>
-                  )}
-                </div>
-              </TabsContent>
-              
-              <TabsContent value="low" className="animate-fade-in">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {lowRiskItems.map((item, index) => (
-                    <AnalysisCard key={`low-${index}`} item={item} />
-                  ))}
-                  {lowRiskItems.length === 0 && (
-                    <div className="col-span-full text-center py-10 text-gray-500">
-                      No low risk parameters found
+                  </div>
+                )}
+                
+                {patientInfo.gender && (
+                  <div className="flex items-center gap-2">
+                    <User className="h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-medium">Gender</p>
+                      <p className="text-sm text-muted-foreground">{patientInfo.gender}</p>
                     </div>
-                  )}
-                </div>
-              </TabsContent>
-              
-              <TabsContent value="normal" className="animate-fade-in">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {normalItems.map((item, index) => (
-                    <AnalysisCard key={`normal-${index}`} item={item} />
-                  ))}
-                  {normalItems.length === 0 && (
-                    <div className="col-span-full text-center py-10 text-gray-500">
-                      No normal parameters found
+                  </div>
+                )}
+                
+                {(patientInfo.dateOfBirth || patientInfo.age) && (
+                  <div className="flex items-center gap-2">
+                    <CalendarIcon className="h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-medium">Date of Birth / Age</p>
+                      <p className="text-sm text-muted-foreground">
+                        {patientInfo.dateOfBirth || patientInfo.age}
+                      </p>
                     </div>
-                  )}
-                </div>
-              </TabsContent>
-              
-              <TabsContent value="all" className="animate-fade-in">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {analysisResults.map((item, index) => (
-                    <AnalysisCard key={`all-${index}`} item={item} />
-                  ))}
-                </div>
-              </TabsContent>
-            </Tabs>
-          </div>
+                  </div>
+                )}
+                
+                {patientInfo.collectionDate && (
+                  <div className="flex items-center gap-2">
+                    <CalendarIcon className="h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-medium">Collection Date</p>
+                      <p className="text-sm text-muted-foreground">
+                        {new Date(patientInfo.collectionDate).toLocaleDateString()}
+                      </p>
+                    </div>
+                  </div>
+                )}
+                
+                {patientInfo.hospitalName && (
+                  <div className="flex items-center gap-2">
+                    <Building className="h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-medium">Hospital/Lab</p>
+                      <p className="text-sm text-muted-foreground">{patientInfo.hospitalName}</p>
+                    </div>
+                  </div>
+                )}
+                
+                {patientInfo.doctorName && (
+                  <div className="flex items-center gap-2">
+                    <User className="h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-medium">Doctor</p>
+                      <p className="text-sm text-muted-foreground">{patientInfo.doctorName}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
         )}
-      </main>
-    </div>
+
+        {/* Risk Alert */}
+        {(highRiskMetrics.length > 0 || mediumRiskMetrics.length > 0) && (
+          <Alert className="mb-6 border-destructive/50 bg-destructive/10">
+            <AlertTriangle className="h-4 w-4 text-destructive" />
+            <AlertTitle>Risk Factors Detected</AlertTitle>
+            <AlertDescription>
+              Your latest health report shows {highRiskMetrics.length} high risk and {mediumRiskMetrics.length} medium risk parameters that require attention.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Results Tabs */}
+        <Tabs defaultValue="all-parameters" value={currentTab} onValueChange={setCurrentTab} className="mb-8">
+          <TabsList>
+            <TabsTrigger value="all-parameters">All Parameters</TabsTrigger>
+            <TabsTrigger value="at-risk">
+              At Risk ({highRiskMetrics.length + mediumRiskMetrics.length})
+            </TabsTrigger>
+            <TabsTrigger value="trends">Trends</TabsTrigger>
+            <TabsTrigger value="summary">Summary</TabsTrigger>
+            <TabsTrigger value="recommendations">Recommendations</TabsTrigger>
+          </TabsList>
+          
+          <TabsContent value="all-parameters" className="mt-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Complete Blood Analysis</CardTitle>
+                <CardDescription>
+                  All parameters extracted from your health report
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <DetailedMetricsTable metrics={metrics} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+          
+          <TabsContent value="at-risk" className="mt-6">
+            {highRiskMetrics.length > 0 || mediumRiskMetrics.length > 0 ? (
+              <div className="space-y-6">
+                {highRiskMetrics.length > 0 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>High Risk Parameters</CardTitle>
+                      <CardDescription>
+                        These parameters require immediate attention
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {highRiskMetrics.map((metric) => (
+                          <HealthMetricCard 
+                            key={metric.name}
+                            title={metric.name} 
+                            value={metric.value}
+                            unit={metric.unit || '-'}
+                            status="danger"
+                            description={metric.description}
+                            range={metric.range}
+                          />
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {mediumRiskMetrics.length > 0 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Medium Risk Parameters</CardTitle>
+                      <CardDescription>
+                        These parameters need monitoring
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {mediumRiskMetrics.map((metric) => (
+                          <HealthMetricCard 
+                            key={metric.name}
+                            title={metric.name} 
+                            value={metric.value}
+                            unit={metric.unit || '-'}
+                            status="warning"
+                            description={metric.description}
+                            range={metric.range}
+                          />
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            ) : (
+              <Card>
+                <CardContent className="p-6 text-center">
+                  <div className="flex flex-col items-center justify-center py-12">
+                    <Shield className="h-12 w-12 text-green-500 mb-3" />
+                    <h3 className="text-xl font-semibold mb-2">All Parameters Normal</h3>
+                    <p className="text-muted-foreground">
+                      Great news! All parameters in your report are within normal ranges.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </TabsContent>
+          
+          <TabsContent value="trends" className="mt-6">
+            <div className="grid grid-cols-1 gap-6">
+              {metrics.map((metric) => (
+                <Card key={metric.name}>
+                  <CardHeader>
+                    <CardTitle>{metric.name} Trend</CardTitle>
+                    <CardDescription>Historical values over time</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-[250px] w-full">
+                      <ChartContainer config={chartConfig}>
+                        {metric.history && metric.history.length > 0 ? (
+                          <ResponsiveContainer width="100%" height="100%">
+                            <AreaChart data={metric.history} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                              <defs>
+                                <linearGradient id={`color-${metric.name}`} x1="0" y1="0" x2="0" y2="1">
+                                  <stop offset="5%" stopColor={`hsl(var(--health-${metric.status}))`} stopOpacity={0.8}/>
+                                  <stop offset="95%" stopColor={`hsl(var(--health-${metric.status}))`} stopOpacity={0.1}/>
+                                </linearGradient>
+                              </defs>
+                              <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
+                              <XAxis dataKey="date" />
+                              <YAxis domain={['auto', 'auto']} />
+                              <Tooltip />
+                              <Area 
+                                type="monotone" 
+                                dataKey="value" 
+                                stroke={`hsl(var(--health-${metric.status}))`} 
+                                fillOpacity={1} 
+                                fill={`url(#color-${metric.name})`} 
+                              />
+                            </AreaChart>
+                          </ResponsiveContainer>
+                        ) : (
+                          <div className="h-full w-full flex items-center justify-center">
+                            <p className="text-muted-foreground">No historical data available</p>
+                          </div>
+                        )}
+                      </ChartContainer>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </TabsContent>
+          
+          <TabsContent value="summary" className="mt-6">
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Report Summary</CardTitle>
+                  <CardDescription>
+                    AI-generated overview of your health report
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="prose prose-sm max-w-none">
+                    <p className="text-muted-foreground">{summary}</p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Detailed Analysis</CardTitle>
+                  <CardDescription>
+                    Comprehensive breakdown of your health metrics
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="prose prose-sm max-w-none">
+                    <p className="text-muted-foreground whitespace-pre-line">{detailedAnalysis}</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+          
+          <TabsContent value="recommendations" className="mt-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>AI-Generated Recommendations</CardTitle>
+                <CardDescription>
+                  Based on your blood report analysis
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {recommendations && recommendations.length > 0 ? (
+                  <ul className="space-y-4">
+                    {recommendations.map((recommendation, index) => (
+                      <li key={index} className="flex items-start gap-2">
+                        <div className="h-6 w-6 flex items-center justify-center rounded-full bg-primary text-primary-foreground text-sm flex-shrink-0">
+                          {index + 1}
+                        </div>
+                        <p>{recommendation}</p>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-muted-foreground">No recommendations available for this report.</p>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      </div>
+    </Layout>
   );
 };
 

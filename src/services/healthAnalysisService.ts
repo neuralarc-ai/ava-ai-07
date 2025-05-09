@@ -1,21 +1,19 @@
 import { toast } from "@/hooks/use-toast";
+// @ts-ignore: No type definitions for 'jsonrepair'
+import { jsonrepair } from 'jsonrepair';
 
 // Type definitions for health report analysis
 export interface HealthMetric {
   name: string;
-  value: number | string;
-  unit: string;
-  status: "normal" | "warning" | "danger" | "high_risk" | "medium_risk" | "low_risk";
-  range: string;
-  history: Array<{
-    date: string;
-    value: number;
-  }>;
-  description?: string;
+  value: string | number;
+  unit?: string;
+  status: 'normal' | 'warning' | 'danger' | 'high_risk' | 'medium_risk' | 'low_risk';
+  range?: string;
+  description: string;
+  trend?: 'increasing' | 'decreasing' | 'stable';
+  history?: { date: string; value: string | number }[];
   category?: string;
-  visualIndicator?: "H" | "L" | "M" | "↑" | "↓" | "normal";
-  riskLevel?: "high" | "medium" | "low" | "normal";
-  trend?: "increasing" | "decreasing" | "stable";
+  riskLevel?: 'high' | 'medium' | 'low' | 'normal';
 }
 
 export interface PatientInfo {
@@ -31,19 +29,22 @@ export interface PatientInfo {
 }
 
 export interface AnalysisResult {
-  metrics: HealthMetric[];
-  recommendations: string[];
+  patientInfo?: {
+    name?: string;
+    age?: string;
+    gender?: string;
+    dateOfBirth?: string;
+    patientId?: string;
+    collectionDate?: string;
+    reportDate?: string;
+    doctorName?: string;
+    hospitalName?: string;
+  };
   summary?: string;
   detailedAnalysis?: string;
-  modelUsed?: string;
-  categories?: string[];
-  patientInfo?: PatientInfo;
-  riskSummary?: {
-    highRisk: string[];
-    mediumRisk: string[];
-    lowRisk: string[];
-    normal: string[];
-  };
+  recommendations?: string[];
+  metrics: HealthMetric[];
+  riskSummary?: string;
 }
 
 // Function to normalize strings to make comparing metrics easier
@@ -87,13 +88,6 @@ function mergeMetrics(allMetrics: HealthMetric[][]): HealthMetric[] {
             (metric.description && existing.description && 
              metric.description.length > existing.description.length)) {
           existing.description = metric.description;
-        }
-        
-        // Keep more specific category
-        if ((!existing.category && metric.category) || 
-            (metric.category && existing.category && 
-             metric.category !== "Other" && existing.category === "Other")) {
-          existing.category = metric.category;
         }
         
         // Keep more specific range if available
@@ -291,8 +285,9 @@ Analyze this health report/lab result: ${text}`
       jsonText = jsonMatch[1]?.trim() || content;
       // Remove trailing commas before } or ]
       jsonText = jsonText.replace(/,\s*([}\]])/g, '$1');
-      // Try to parse
-      const result = JSON.parse(jsonText);
+      // Attempt to repair JSON before parsing
+      const repaired = jsonrepair(jsonText);
+      const result = JSON.parse(repaired);
 
       // Validate the result structure
       if (!result.metrics || !Array.isArray(result.metrics)) {
@@ -310,13 +305,18 @@ Analyze this health report/lab result: ${text}`
           }
         }
 
-        // Determine risk level based on status and visual indicators
+        // Determine status and risk level based on indicators
+        let status = metric.status || 'normal';
         let riskLevel = metric.riskLevel || 'normal';
-        if (metric.status === 'high_risk' || metric.visualIndicator === 'H' || metric.visualIndicator === '↑') {
+
+        if (metric.visualIndicator === 'H' || metric.visualIndicator === '↑') {
+          status = 'high_risk';
           riskLevel = 'high';
-        } else if (metric.status === 'medium_risk' || metric.visualIndicator === 'M') {
+        } else if (metric.visualIndicator === 'M') {
+          status = 'medium_risk';
           riskLevel = 'medium';
-        } else if (metric.status === 'low_risk' || metric.visualIndicator === 'L' || metric.visualIndicator === '↓') {
+        } else if (metric.visualIndicator === 'L' || metric.visualIndicator === '↓') {
+          status = 'low_risk';
           riskLevel = 'low';
         }
 
@@ -324,13 +324,13 @@ Analyze this health report/lab result: ${text}`
           name: metric.name || 'Unknown',
           value: value,
           unit: metric.unit || '',
-          status: metric.status || 'normal',
+          status: status,
           range: metric.range || '',
           description: metric.description || '',
           category: metric.category || 'Other',
-          visualIndicator: metric.visualIndicator || 'normal',
           riskLevel: riskLevel,
-          trend: metric.trend || 'stable'
+          trend: metric.trend || 'stable',
+          history: metric.history || []
         };
       });
 
@@ -373,12 +373,12 @@ Analyze this health report/lab result: ${text}`
   }
 }
 
-export async function analyzeHealthReport(ocrText: string): Promise<AnalysisResult | null> {
+export async function analyzeHealthReport(text: string): Promise<AnalysisResult> {
   try {
     console.log("Starting health report analysis with Gemini");
     
     // Analyze with Gemini
-    const result = await analyzeWithModel(ocrText);
+    const result = await analyzeWithModel(text);
     if (!result || result.metrics.length === 0) {
       throw new Error("Failed to analyze the health report");
     }
@@ -404,10 +404,10 @@ export async function analyzeHealthReport(ocrText: string): Promise<AnalysisResu
     console.error("Error analyzing health report:", error);
     toast({
       title: "Analysis Failed",
-      description: "Failed to analyze your health report. Please check your API key and try again.",
+      description: "Failed to analyze your health report. Please try again.",
       variant: "destructive",
     });
-    return null;
+    throw error;
   }
 }
 

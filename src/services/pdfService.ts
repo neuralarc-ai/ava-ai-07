@@ -25,10 +25,11 @@ export interface BloodTestResult {
   parameter: string;
   value: string;
   referenceRange: string;
-  description: string;
-  recommendation: string;
   riskLevel: 'high' | 'medium' | 'low' | 'normal';
+  description: string;
+  recommendation?: string;
   criticalAction?: string;
+  unit?: string;
 }
 
 export interface PDFExtractionResult {
@@ -80,6 +81,53 @@ export async function extractTextFromPDF(file: File): Promise<PDFExtractionResul
   }
 }
 
+// Helper function to parse numeric value from string
+function parseNumericValue(value: string): number | null {
+  // Remove any units or special characters, keep only numbers and decimal points
+  const numStr = value.replace(/[^0-9.-]/g, '');
+  const num = parseFloat(numStr);
+  return isNaN(num) ? null : num;
+}
+
+// Helper function to parse reference range
+function parseReferenceRange(range: string): { min: number | null; max: number | null } {
+  const parts = range.split('-').map(part => parseNumericValue(part.trim()));
+  return {
+    min: parts[0],
+    max: parts[1]
+  };
+}
+
+// Helper function to determine risk level based on value and reference range
+function determineRiskLevel(value: string | number, referenceRange: string): 'high' | 'medium' | 'low' | 'normal' {
+  const numericValue = typeof value === 'number' ? value : parseNumericValue(value);
+  const { min, max } = parseReferenceRange(referenceRange);
+  
+  if (numericValue === null || min === null || max === null) {
+    return 'normal'; // Default to normal if we can't parse the values
+  }
+
+  const midpoint = (min + max) / 2;
+  const range = max - min;
+  const deviation = Math.abs(numericValue - midpoint);
+  
+  // Calculate how far the value is from the reference range
+  if (numericValue < min) {
+    const percentBelow = ((min - numericValue) / range) * 100;
+    if (percentBelow > 50) return 'high';
+    if (percentBelow > 20) return 'medium';
+    return 'low';
+  } else if (numericValue > max) {
+    const percentAbove = ((numericValue - max) / range) * 100;
+    if (percentAbove > 50) return 'high';
+    if (percentAbove > 20) return 'medium';
+    return 'low';
+  }
+  
+  return 'normal';
+}
+
+// Convert the analysis metrics to BloodTestResult format with proper risk level determination
 export const processPDF = async (file: File): Promise<BloodTestResult[]> => {
   try {
     // First, perform OCR on the PDF
@@ -95,15 +143,21 @@ export const processPDF = async (file: File): Promise<BloodTestResult[]> => {
     }
 
     // Convert the analysis metrics to BloodTestResult format
-    const results: BloodTestResult[] = analysisResult.metrics.map(metric => ({
-      parameter: metric.name,
-      value: `${metric.value} ${metric.unit}`,
-      referenceRange: metric.range,
-      description: metric.description || '',
-      recommendation: getRecommendation(metric),
-      riskLevel: mapStatusToRiskLevel(metric.status),
-      criticalAction: metric.status === 'danger' ? getCriticalAction(metric) : undefined
-    }));
+    const results: BloodTestResult[] = analysisResult.metrics.map(metric => {
+      const value = `${metric.value} ${metric.unit}`;
+      const riskLevel = determineRiskLevel(metric.value, metric.range);
+      
+      return {
+        parameter: metric.name,
+        value: value,
+        referenceRange: metric.range,
+        description: metric.description || getDefaultDescription(riskLevel, metric.name),
+        recommendation: getRecommendation(metric, riskLevel),
+        riskLevel: riskLevel,
+        criticalAction: riskLevel === 'high' ? getCriticalAction(metric) : undefined,
+        unit: metric.unit
+      };
+    });
 
     return results;
   } catch (error) {
@@ -112,30 +166,45 @@ export const processPDF = async (file: File): Promise<BloodTestResult[]> => {
   }
 };
 
-// Helper function to map status to risk level
-function mapStatusToRiskLevel(status: string): 'high' | 'medium' | 'low' | 'normal' {
-  switch (status) {
-    case 'danger':
-      return 'high';
-    case 'warning':
-      return 'medium';
+// Helper function to get default description based on risk level
+function getDefaultDescription(riskLevel: 'high' | 'medium' | 'low' | 'normal', parameterName: string): string {
+  switch (riskLevel) {
+    case 'high':
+      return `${parameterName} levels are significantly outside the normal range and require immediate attention`;
+    case 'medium':
+      return `${parameterName} levels are moderately elevated/decreased and should be monitored`;
+    case 'low':
+      return `${parameterName} levels are slightly outside the normal range`;
     case 'normal':
-      return 'normal';
-    default:
-      return 'low';
+      return `${parameterName} levels are within the normal range`;
   }
 }
 
-// Helper function to generate recommendations based on metric
-function getRecommendation(metric: HealthMetric): string {
-  if (metric.status === 'normal') {
+// Helper function to generate recommendations based on risk level
+function getRecommendation(metric: HealthMetric, riskLevel: 'high' | 'medium' | 'low' | 'normal'): string {
+  if (riskLevel === 'normal') {
     return 'Continue with your current lifestyle and diet.';
   }
+
+  const numericValue = parseNumericValue(metric.value.toString());
+  const { min, max } = parseReferenceRange(metric.range);
   
-  const direction = typeof metric.value === 'number' && 
-    parseFloat(metric.range.split('-')[0]) > metric.value ? 'low' : 'high';
+  if (numericValue === null || min === null || max === null) {
+    return `Consult with your healthcare provider about your ${metric.name} levels.`;
+  }
+
+  const direction = numericValue < min ? 'low' : 'high';
   
-  return `Consider ${direction === 'high' ? 'reducing' : 'increasing'} your intake of foods that affect ${metric.name} levels.`;
+  switch (riskLevel) {
+    case 'high':
+      return `Urgent: Consult your healthcare provider about ${direction === 'high' ? 'elevated' : 'low'} ${metric.name} levels. Consider immediate lifestyle/dietary changes.`;
+    case 'medium':
+      return `Monitor your ${metric.name} levels and consider ${direction === 'high' ? 'reducing' : 'increasing'} intake of foods that affect these levels.`;
+    case 'low':
+      return `Make minor adjustments to your diet and lifestyle to optimize ${metric.name} levels.`;
+    default:
+      return 'Continue with your current lifestyle and diet.';
+  }
 }
 
 // Helper function to generate critical actions for high-risk metrics

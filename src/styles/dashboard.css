@@ -1,0 +1,65 @@
+/* Dashboard-specific styles */
+.dashboard-card {
+  transition: transform 0.2s ease-in-out;
+}
+
+.dashboard-card:hover {
+  transform: translateY(-2px);
+}
+
+/* Risk level colors */
+.risk-high {
+  @apply bg-red-100/50 border-red-500/50;
+}
+
+.risk-medium {
+  @apply bg-amber-100/50 border-amber-500/50;
+}
+
+.risk-normal {
+  @apply bg-green-100/50 border-green-500/50;
+}
+
+/* Chart colors */
+.chart-primary {
+  @apply stroke-blue-500 fill-blue-500/10;
+}
+
+.chart-secondary {
+  @apply stroke-gray-500 fill-gray-500/10;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+/* Responsive grid adjustments */
+@media (max-width: 768px) {
+  .dashboard-grid {
+    @apply grid-cols-1;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+  .dashboard-grid {
+    @apply grid-cols-2;
+  }
+}
+
+@media (min-width: 1025px) {
+  .dashboard-grid {
+    @apply grid-cols-3;
+  }
+} 

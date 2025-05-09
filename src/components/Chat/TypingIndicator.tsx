@@ -1,15 +1,14 @@
-
 import React from 'react';
 import Avatar from '../Avatar';
 
 interface TypingIndicatorProps {
-  sender: 'ava' | 'sam';
+  sender: 'ava' | 'sam' | 'lab_expert';
 }
 
 const TypingIndicator: React.FC<TypingIndicatorProps> = ({ sender }) => {
   // Display name based on sender
-  const senderName = sender === 'ava' ? 'Ava AI' : 'Sam';
-  const senderRole = sender === 'ava' ? '(Blood Analysis Expert)' : '(Lab Assistant)';
+  const senderName = sender === 'ava' ? 'Ava AI' : sender === 'lab_expert' ? 'Lab Expert' : 'Sam';
+  const senderRole = sender === 'ava' ? '(Blood Analysis Expert)' : sender === 'lab_expert' ? '(Lab Expert)' : '(Lab Assistant)';
   
   // Message styling based on sender
   const messageBgClass = sender === 'ava' ? 'bg-ava-muted' : 'bg-blue-50';

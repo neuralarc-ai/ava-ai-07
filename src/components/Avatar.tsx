@@ -1,8 +1,7 @@
-
 import React from 'react';
 
 interface AvatarProps {
-  type: 'ava' | 'sam' | 'user';
+  type: 'ava' | 'sam' | 'user' | 'lab_expert';
   size?: 'sm' | 'md' | 'lg';
 }
 
@@ -25,6 +24,12 @@ const Avatar: React.FC<AvatarProps> = ({ type, size = 'md' }) => {
         return (
           <div className={`${sizeClasses[size]} rounded-full bg-blue-500 flex items-center justify-center text-white font-bold`}>
             S
+          </div>
+        );
+      case 'lab_expert':
+        return (
+          <div className={`${sizeClasses[size]} rounded-full bg-purple-600 flex items-center justify-center text-white font-bold`}>
+            L
           </div>
         );
       case 'user':

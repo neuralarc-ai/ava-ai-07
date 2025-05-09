@@ -1,11 +1,10 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import ChatMessage from './ChatMessage';
 import TypingIndicator from './TypingIndicator';
 
 export interface Message {
   id: string;
-  sender: 'ava' | 'sam' | 'user';
+  sender: 'ava' | 'sam' | 'user' | 'lab_expert';
   message: string;
   timestamp: Date;
   isNew?: boolean;
@@ -14,7 +13,7 @@ export interface Message {
 interface ChatWindowProps {
   messages: Message[];
   isTyping?: boolean;
-  whoIsTyping?: 'ava' | 'sam';
+  whoIsTyping?: 'ava' | 'sam' | 'lab_expert';
   animateTyping?: boolean;
 }
 
@@ -25,33 +24,52 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   animateTyping = true
 }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [visibleMessages, setVisibleMessages] = useState<Message[]>([]);
 
+  // Smooth scroll to bottom
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
   };
 
+  // Update visible messages with animation
+  useEffect(() => {
+    const newMessages = messages.filter(msg => !visibleMessages.find(vm => vm.id === msg.id));
+    
+    if (newMessages.length > 0) {
+      // Add new messages one by one with a slight delay
+      let delay = 0;
+      newMessages.forEach((msg) => {
+        setTimeout(() => {
+          setVisibleMessages(prev => [...prev, msg]);
+        }, delay);
+        delay += 100; // 100ms delay between each message
+      });
+    }
+  }, [messages]);
+
+  // Scroll to bottom when messages change or typing status changes
   useEffect(() => {
     scrollToBottom();
-  }, [messages, isTyping]);
+  }, [visibleMessages, isTyping]);
 
   return (
     <div className="flex flex-col h-full p-4 overflow-y-auto mb-2">
-      <div className="flex-grow">
-        {messages.map((msg, index) => (
+      <div className="flex-grow space-y-4">
+        {visibleMessages.map((msg) => (
           <ChatMessage 
             key={msg.id}
             sender={msg.sender}
             message={msg.message}
-            animateTyping={animateTyping}
-            isNew={msg.isNew || false}
+            animateTyping={animateTyping && msg.isNew}
+            isNew={msg.isNew}
           />
         ))}
 
         {isTyping && (
-          <div className="flex justify-start mb-4">
-            <div className="flex flex-row items-start max-w-[80%]">
+          <div className="flex justify-start">
               <TypingIndicator sender={whoIsTyping} />
-            </div>
           </div>
         )}
         <div ref={messagesEndRef} />
