@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
@@ -9,12 +9,13 @@ import { HealthMetricCard } from '@/components/Card/HealthMetricCard';
 import { DetailedMetricsTable } from '@/components/reports/DetailedMetricsTable';
 import { ChartContainer } from '@/components/ui/chart';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { Download, FileText, User, CalendarIcon, Building, Shield, AlertCircle, Activity, AlertTriangle, FileHeart } from 'lucide-react';
+import { Download, FileText, User, CalendarIcon, Building, Shield, AlertCircle, Activity, AlertTriangle, FileHeart, Save } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { useReportFile } from '@/ReportFileContext';
 import { performOCR } from '@/services/ocrService';
-import { analyzeHealthReport } from '@/services/healthAnalysisService';
+import { analyzeHealthReport, getStoredReportById } from '@/services/healthAnalysisService';
 import type { HealthMetric } from '@/services/healthAnalysisService';
+import { toast } from '@/hooks/use-toast';
 
 interface PatientInfo {
   name?: string;
@@ -31,6 +32,7 @@ interface PatientInfo {
 const Results = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { reportId } = useParams<{ reportId: string }>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentTab, setCurrentTab] = useState('all-parameters');
@@ -53,6 +55,34 @@ const Results = () => {
       try {
         setLoading(true);
         setError(null);
+
+        // If we have a reportId, try to load the stored report
+        if (reportId) {
+          const storedReport = getStoredReportById(reportId);
+          if (storedReport) {
+            setMetrics(storedReport.metrics);
+            setHighRiskMetrics(storedReport.metrics.filter(m => m.status === 'danger' || m.status === 'high_risk'));
+            setMediumRiskMetrics(storedReport.metrics.filter(m => m.status === 'warning' || m.status === 'medium_risk'));
+            setNormalMetrics(storedReport.metrics.filter(m => m.status === 'normal' || m.status === 'low_risk'));
+            setPatientInfo(storedReport.patientInfo);
+            setSummary(storedReport.summary);
+            setDetailedAnalysis(storedReport.detailedAnalysis);
+            setRecommendations(storedReport.recommendations || []);
+            setReportTitle(
+              storedReport.patientInfo?.name 
+                ? `${storedReport.patientInfo.name}'s Health Report`
+                : "Health Report"
+            );
+            setLoading(false);
+            return;
+          } else {
+            // If stored report not found, redirect to reports page
+            navigate('/reports');
+            return;
+          }
+        }
+
+        // If no stored report or no reportId, process new file
         if (!file) {
           throw new Error('No report file found. Please upload your report again.');
         }
@@ -101,6 +131,11 @@ const Results = () => {
         setMediumRiskMetrics(allMetrics.filter(m => m.status === 'warning' || m.status === 'medium_risk'));
         setNormalMetrics(allMetrics.filter(m => m.status === 'normal' || m.status === 'low_risk'));
 
+        // Navigate to the stored report view
+        if (analysisResult.reportId) {
+          navigate(`/results/${analysisResult.reportId}`, { replace: true });
+        }
+
       } catch (err) {
         console.error('Error processing report:', err);
         const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
@@ -111,11 +146,57 @@ const Results = () => {
     };
     
     processReport();
-  }, [file]);
+  }, [file, reportId, navigate]);
 
   const handleExportPDF = () => {
     // This would be implemented with a PDF generation library
     alert("PDF export functionality will be implemented in a future update");
+  };
+
+  const handleSaveToProfile = () => {
+    try {
+      // Get existing saved reports from localStorage
+      const savedReports = JSON.parse(localStorage.getItem('savedReports') || '[]');
+      
+      // Create a new saved report object
+      const reportToSave = {
+        id: reportId || uuidv4(),
+        timestamp: Date.now(),
+        patientInfo,
+        metrics,
+        summary,
+        detailedAnalysis,
+        recommendations,
+        categories: metrics.map(m => m.category).filter((c, i, a) => c && a.indexOf(c) === i)
+      };
+      
+      // Check if this report is already saved
+      const isAlreadySaved = savedReports.some((report: any) => report.id === reportToSave.id);
+      
+      if (isAlreadySaved) {
+        toast({
+          title: "Already Saved",
+          description: "This report is already saved to your profile.",
+        });
+        return;
+      }
+      
+      // Add the new report to saved reports
+      savedReports.push(reportToSave);
+      localStorage.setItem('savedReports', JSON.stringify(savedReports));
+      
+      toast({
+        title: "Saved to Profile",
+        description: "Report has been saved to your profile for trend analysis.",
+      });
+    } catch (error) {
+      console.error('Error saving report:', error);
+      toast({
+        title: "Save Failed",
+        description: "Failed to save the report to your profile.",
+        variant: "destructive",
+      });
+    }
   };
 
   if (loading) {
@@ -165,14 +246,24 @@ const Results = () => {
               Report Date: {patientInfo?.collectionDate ? new Date(patientInfo.collectionDate).toLocaleDateString() : 'Not specified'}
             </p>
           </div>
-          <Button 
-            className="mt-4 md:mt-0" 
-            variant="outline"
-            onClick={handleExportPDF}
-          >
-            <Download className="h-4 w-4 mr-2" />
-            Export PDF
-          </Button>
+          <div className="flex gap-2 mt-4 md:mt-0">
+            <Button 
+              variant="outline"
+              onClick={handleSaveToProfile}
+              className="flex items-center gap-2"
+            >
+              <Save className="h-4 w-4" />
+              Save to Profile
+            </Button>
+            <Button 
+              variant="outline"
+              onClick={handleExportPDF}
+              className="flex items-center gap-2"
+            >
+              <Download className="h-4 w-4" />
+              Export PDF
+            </Button>
+          </div>
         </div>
 
         {/* Patient Information Card */}

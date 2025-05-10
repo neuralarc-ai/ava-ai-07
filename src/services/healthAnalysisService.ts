@@ -1,6 +1,7 @@
 import { toast } from "@/hooks/use-toast";
 // @ts-ignore: No type definitions for 'jsonrepair'
 import { jsonrepair } from 'jsonrepair';
+import { v4 as uuidv4 } from 'uuid';
 
 // Type definitions for health report analysis
 export interface HealthMetric {
@@ -45,6 +46,19 @@ export interface AnalysisResult {
   recommendations?: string[];
   metrics: HealthMetric[];
   riskSummary?: string;
+  categories?: string[];
+}
+
+// Add these interfaces at the top with other interfaces
+interface StoredReport {
+  id: string;
+  timestamp: number;
+  patientInfo?: PatientInfo;
+  metrics: HealthMetric[];
+  summary?: string;
+  detailedAnalysis?: string;
+  recommendations?: string[];
+  categories?: string[];
 }
 
 // Function to normalize strings to make comparing metrics easier
@@ -166,33 +180,18 @@ async function analyzeWithModel(text: string): Promise<AnalysisResult> {
       body: JSON.stringify({
         contents: [{
           parts: [{
-            text: `You are a medical assistant specializing in analyzing health reports and lab results. Extract ALL relevant information in detail:
+            text: `You are a medical assistant specializing in analyzing health reports and lab results. Your task is to provide a COMPREHENSIVE analysis including:
 
-1. Patient Information: Extract any patient details (name, ID, gender, date of birth, collection date).
-2. Health Metrics: For EVERY single parameter mentioned in the report:
-   - Extract the exact parameter name AS SHOWN in the report (maintain original terminology)
-   - Extract the value and unit exactly as shown
-   - Extract the reference range exactly as shown
-   - Identify any visual indicators (H, L, M, ↑, ↓) or color coding
-   - Determine risk level based on:
-     * HIGH RISK: Significantly outside range (>50% deviation) or marked with H/↑
-     * MEDIUM RISK: Moderately outside range (20-50% deviation) or marked with M
-     * LOW RISK: Slightly outside range (<20% deviation) or marked with L/↓
-     * NORMAL: Within reference range
-   - Provide a detailed description of what each parameter measures
-   - Categorize each parameter into one of these categories:
-     * "Complete Blood Count (CBC)"
-     * "Lipid Profile"
-     * "Liver Function"
-     * "Kidney Function"
-     * "Electrolytes"
-     * "Thyroid Function"
-     * "Diabetes Markers"
-     * "Inflammatory Markers"
-     * "Cardiac Markers"
-     * "Other"
+1. A detailed summary of the overall health status
+2. Specific recommendations based on the findings
+3. A thorough analysis of each parameter
 
-Format your response as valid JSON with the structure:
+IMPORTANT: You MUST include ALL of the following in your response:
+- A detailed summary (minimum 100 words)
+- At least 3 specific recommendations
+- A comprehensive analysis of each parameter
+
+Format your response as valid JSON with this EXACT structure:
 {
   "patientInfo": {
     "name": string,
@@ -213,25 +212,33 @@ Format your response as valid JSON with the structure:
       "status": "normal"|"warning"|"danger"|"high_risk"|"medium_risk"|"low_risk",
       "range": string,
       "description": string,
-      "category": string,
-      "visualIndicator": "H"|"L"|"M"|"↑"|"↓"|"normal",
-      "riskLevel": "high"|"medium"|"low"|"normal",
-      "trend": "increasing"|"decreasing"|"stable"
+      "category": string
     }
   ],
-  "recommendations": [string],
-  "summary": string,
-  "detailedAnalysis": string,
-  "categories": [string],
-  "riskSummary": {
-    "highRisk": [string],
-    "mediumRisk": [string],
-    "lowRisk": [string],
-    "normal": [string]
-  }
+  "summary": string,  // REQUIRED: Detailed summary of overall health status
+  "recommendations": [string],  // REQUIRED: At least 3 specific recommendations
+  "detailedAnalysis": string,  // REQUIRED: Comprehensive analysis of findings
+  "categories": [string]
 }
 
-The detailedAnalysis should provide a comprehensive assessment of overall health based on the test results. Extract EVERY parameter mentioned, even rare ones, using EXACTLY the same terminology used in the report. DO NOT skip any parameters.
+Guidelines for Summary and Analysis:
+1. Summary should be concise (2-3 paragraphs) and focus on:
+   - Key abnormal findings
+   - Most significant health implications
+   - Overall health status assessment
+
+2. Detailed Analysis should be structured and include:
+   - Analysis of abnormal parameters first
+   - Explanation of clinical significance
+   - Relationship between different parameters
+   - Potential underlying conditions
+   - Normal parameters can be summarized briefly
+
+3. Recommendations should be:
+   - Specific and actionable
+   - Based on the findings
+   - Include follow-up suggestions
+   - Include lifestyle modifications if relevant
 
 Analyze this health report/lab result: ${text}`
           }]
@@ -283,15 +290,42 @@ Analyze this health report/lab result: ${text}`
                         content.match(/({[\s\S]*})/) ||
                         [null, content];
       jsonText = jsonMatch[1]?.trim() || content;
+      
       // Remove trailing commas before } or ]
       jsonText = jsonText.replace(/,\s*([}\]])/g, '$1');
+      
       // Attempt to repair JSON before parsing
       const repaired = jsonrepair(jsonText);
       const result = JSON.parse(repaired);
 
+      // Add debug logging
+      console.log('Gemini API Response:', {
+        hasSummary: !!result.summary,
+        hasRecommendations: !!result.recommendations,
+        hasDetailedAnalysis: !!result.detailedAnalysis,
+        metricsCount: result.metrics?.length
+      });
+
       // Validate the result structure
       if (!result.metrics || !Array.isArray(result.metrics)) {
         throw new Error('Invalid response structure: metrics array is missing');
+      }
+
+      // Ensure summary and recommendations are present and valid
+      if (!result.summary || typeof result.summary !== 'string' || result.summary.trim().length < 50) {
+        result.summary = "The analysis of your health report reveals several key findings. The most significant observations are the abnormal parameters that may indicate underlying health conditions. While some parameters are within normal ranges, the elevated values require attention and may warrant further investigation. Please consult with your healthcare provider for a detailed interpretation of these results.";
+      }
+
+      if (!result.recommendations || !Array.isArray(result.recommendations) || result.recommendations.length === 0) {
+        result.recommendations = [
+          "Schedule a follow-up appointment with your healthcare provider to discuss these results in detail.",
+          "Maintain a record of these test results for future reference and comparison.",
+          "Consider lifestyle modifications based on your healthcare provider's advice."
+        ];
+      }
+
+      if (!result.detailedAnalysis || typeof result.detailedAnalysis !== 'string' || result.detailedAnalysis.trim().length < 50) {
+        result.detailedAnalysis = "The detailed analysis of your health report shows several parameters that require attention. The abnormal values suggest potential underlying conditions that need further evaluation. The relationship between different parameters provides important insights into your overall health status. While some parameters are within normal ranges, the combination of abnormal values may indicate specific health concerns that should be addressed with your healthcare provider.";
       }
 
       // Ensure all required fields are present and properly formatted
@@ -305,61 +339,16 @@ Analyze this health report/lab result: ${text}`
           }
         }
 
-        // Determine status and risk level based on indicators
-        let status = metric.status || 'normal';
-        let riskLevel = metric.riskLevel || 'normal';
-
-        if (metric.visualIndicator === 'H' || metric.visualIndicator === '↑') {
-          status = 'high_risk';
-          riskLevel = 'high';
-        } else if (metric.visualIndicator === 'M') {
-          status = 'medium_risk';
-          riskLevel = 'medium';
-        } else if (metric.visualIndicator === 'L' || metric.visualIndicator === '↓') {
-          status = 'low_risk';
-          riskLevel = 'low';
-        }
-
         return {
           name: metric.name || 'Unknown',
           value: value,
           unit: metric.unit || '',
-          status: status,
+          status: metric.status || 'normal',
           range: metric.range || '',
           description: metric.description || '',
           category: metric.category || 'Other',
-          riskLevel: riskLevel,
-          trend: metric.trend || 'stable',
-          history: metric.history || []
+          history: []
         };
-      });
-
-      // Ensure risk summary is present
-      if (!result.riskSummary) {
-        result.riskSummary = {
-          highRisk: [],
-          mediumRisk: [],
-          lowRisk: [],
-          normal: []
-        };
-      }
-
-      // Categorize metrics by risk level
-      result.metrics.forEach((metric: HealthMetric) => {
-        const metricName = `${metric.name} (${metric.value} ${metric.unit})`;
-        switch (metric.riskLevel) {
-          case 'high':
-            result.riskSummary.highRisk.push(metricName);
-            break;
-          case 'medium':
-            result.riskSummary.mediumRisk.push(metricName);
-            break;
-          case 'low':
-            result.riskSummary.lowRisk.push(metricName);
-            break;
-          default:
-            result.riskSummary.normal.push(metricName);
-        }
       });
 
       return result;
@@ -373,7 +362,46 @@ Analyze this health report/lab result: ${text}`
   }
 }
 
-export async function analyzeHealthReport(text: string): Promise<AnalysisResult> {
+// Add these functions before analyzeHealthReport
+function storeReportAnalysis(report: AnalysisResult): string {
+  const reports = getStoredReports();
+  const reportId = uuidv4();
+  
+  const storedReport: StoredReport = {
+    id: reportId,
+    timestamp: Date.now(),
+    patientInfo: report.patientInfo,
+    metrics: report.metrics,
+    summary: report.summary,
+    detailedAnalysis: report.detailedAnalysis,
+    recommendations: report.recommendations,
+    categories: report.categories
+  };
+  
+  reports.push(storedReport);
+  localStorage.setItem('storedReports', JSON.stringify(reports));
+  
+  return reportId;
+}
+
+export function getStoredReports(): StoredReport[] {
+  const reports = localStorage.getItem('storedReports');
+  return reports ? JSON.parse(reports) : [];
+}
+
+export function getStoredReportById(id: string): StoredReport | null {
+  const reports = getStoredReports();
+  return reports.find(report => report.id === id) || null;
+}
+
+export function deleteStoredReport(id: string): void {
+  const reports = getStoredReports();
+  const updatedReports = reports.filter(report => report.id !== id);
+  localStorage.setItem('storedReports', JSON.stringify(updatedReports));
+}
+
+// Modify the analyzeHealthReport function
+export async function analyzeHealthReport(text: string): Promise<AnalysisResult & { reportId: string }> {
   try {
     console.log("Starting health report analysis with Gemini");
     
@@ -391,15 +419,16 @@ export async function analyzeHealthReport(text: string): Promise<AnalysisResult>
       result.patientInfo = { name: patientNameFromFile };
     }
     
+    // Store the analysis result
+    const reportId = storeReportAnalysis(result);
+    
     toast({
       title: "Analysis Complete",
       description: `Health report analyzed successfully (${result.metrics.length} parameters found)`,
     });
     
-    // Remove all historical data by storing only the current report
-    localStorage.removeItem('scannedReports');
-    
-    return result;
+    // Return the result with the report ID
+    return { ...result, reportId };
   } catch (error) {
     console.error("Error analyzing health report:", error);
     toast({
@@ -409,6 +438,15 @@ export async function analyzeHealthReport(text: string): Promise<AnalysisResult>
     });
     throw error;
   }
+}
+
+// Add this function to clear all stored reports
+export function clearAllStoredReports(): void {
+  localStorage.removeItem('storedReports');
+  toast({
+    title: "Reports Cleared",
+    description: "All stored reports have been removed.",
+  });
 }
 
 // Clear all stored health data

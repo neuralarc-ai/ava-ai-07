@@ -9,6 +9,8 @@ import { Link } from "react-router-dom";
 import FileUpload from '@/components/Upload/FileUpload';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useFileUpload } from '@/hooks/use-file-upload';
+import { analyzeHealthReport } from '@/services/healthAnalysisService';
+import { performOCR } from '@/services/ocrService';
 
 interface Report {
   id: string;
@@ -18,6 +20,24 @@ interface Report {
   type: 'blood_test' | 'general';
   summary?: string;
   riskLevel?: 'high' | 'medium' | 'low' | 'normal';
+  patientInfo?: {
+    name?: string;
+    age?: string;
+    gender?: string;
+    dateOfBirth?: string;
+    patientId?: string;
+    collectionDate?: string;
+  };
+  metrics?: Array<{
+    name: string;
+    value: number | string;
+    unit: string;
+    status: string;
+    range: string;
+    category: string;
+  }>;
+  detailedAnalysis?: string;
+  recommendations?: string[];
 }
 
 const Reports = () => {
@@ -25,17 +45,66 @@ const Reports = () => {
   const [reports, setReports] = useState<Report[]>([]);
   const { toast } = useToast();
   const { handleFileUpload, isLoading } = useFileUpload({
-    onSuccess: () => {
-      setUploadVisible(false);
-      // Refresh reports list
-      const storedReports = localStorage.getItem('scannedReports');
-      if (storedReports) {
-        try {
-          const parsedReports = JSON.parse(storedReports);
-          setReports(parsedReports);
-        } catch (error) {
-          console.error("Error parsing reports:", error);
+    onSuccess: async (file) => {
+      try {
+        // Perform OCR on the uploaded file
+        const ocrResult = await performOCR(file);
+        if (!ocrResult || !ocrResult.text) {
+          throw new Error('Failed to extract text from the PDF');
         }
+
+        // Analyze the health report
+        const analysisResult = await analyzeHealthReport(ocrResult.text);
+        if (!analysisResult) {
+          throw new Error('Failed to analyze the health report');
+        }
+
+        // Create a new report object
+        const newReport: Report = {
+          id: analysisResult.reportId || crypto.randomUUID(),
+          name: analysisResult.patientInfo?.name || 'Unnamed Report',
+          date: analysisResult.patientInfo?.collectionDate || new Date().toISOString(),
+          status: 'completed',
+          type: 'blood_test',
+          summary: analysisResult.summary,
+          riskLevel: analysisResult.metrics.some(m => m.status === 'danger' || m.status === 'high_risk') 
+            ? 'high' 
+            : analysisResult.metrics.some(m => m.status === 'warning' || m.status === 'medium_risk')
+            ? 'medium'
+            : 'normal',
+          patientInfo: analysisResult.patientInfo,
+          metrics: analysisResult.metrics,
+          detailedAnalysis: analysisResult.detailedAnalysis,
+          recommendations: analysisResult.recommendations
+        };
+
+        // Update reports in state and localStorage
+        const updatedReports = [newReport, ...reports];
+        setReports(updatedReports);
+        localStorage.setItem('scannedReports', JSON.stringify(updatedReports));
+
+        // Also save to savedReports for profile
+        const savedReports = JSON.parse(localStorage.getItem('savedReports') || '[]');
+        savedReports.push({
+          ...newReport,
+          timestamp: Date.now(),
+          categories: analysisResult.metrics.map(m => m.category).filter((c, i, a) => c && a.indexOf(c) === i)
+        });
+        localStorage.setItem('savedReports', JSON.stringify(savedReports));
+
+        toast({
+          title: "Report Analyzed",
+          description: "Your report has been analyzed and saved successfully.",
+        });
+
+        setUploadVisible(false);
+      } catch (error) {
+        console.error('Error processing report:', error);
+        toast({
+          title: "Analysis Failed",
+          description: "Failed to analyze the report. Please try again.",
+          variant: "destructive",
+        });
       }
     }
   });
@@ -144,7 +213,7 @@ const Reports = () => {
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
                           <Button variant="outline" size="icon" asChild>
-                            <Link to={`/results?report=${report.id}`}>
+                            <Link to={`/results/${report.id}`}>
                               <Eye className="h-4 w-4" />
                               <span className="sr-only">View</span>
                             </Link>
